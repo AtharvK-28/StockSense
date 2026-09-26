@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { Inbox, Plus, Search, Warehouse } from "lucide-react";
+import { Inbox, KanbanSquare, List, Plus, Search, Warehouse } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Link, useParams } from "react-router";
-import { DocumentTable } from "../../components/DocumentTable";
+import { Link, useParams, useSearchParams } from "react-router";
+import { DocumentKanban, DocumentTable, ViewToggle } from "../../components/DocumentTable";
 import { Button, Card, Chip, EmptyState, PageHeader, SelectPill, Skeleton } from "../../components/ui";
 import { api, qs } from "../../lib/api";
 import { STATUS_LABEL, docTypeBySlug, isOpen } from "../../lib/format";
@@ -15,9 +15,14 @@ const STATUSES: DocStatus[] = ["draft", "waiting", "ready", "done", "canceled"];
 export function DocumentList() {
   const { kind } = useParams();
   const meta = docTypeBySlug(kind);
-  const [status, setStatus] = useState<StatusFilter>("open");
+  const [params] = useSearchParams();
+  const [status, setStatus] = useState<StatusFilter>(() => {
+    const fromUrl = params.get("status");
+    return fromUrl && ["open", "all", ...STATUSES].includes(fromUrl) ? (fromUrl as StatusFilter) : "open";
+  });
   const [warehouseId, setWarehouseId] = useState("");
   const [q, setQ] = useState("");
+  const [view, setView] = useState<"list" | "kanban">("list");
   const search = useDebounced(q.trim());
   const warehouses = useWarehouses();
 
@@ -64,7 +69,7 @@ export function DocumentList() {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder={`Reference, ${meta.partnerLabel?.toLowerCase() ?? "product"} or SKU`}
+            placeholder={meta.partnerLabel ? "Search reference or contact" : "Search reference or product"}
             aria-label="Search"
             className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
           />
@@ -77,7 +82,25 @@ export function DocumentList() {
             </option>
           ))}
         </SelectPill>
+        <div className="ml-auto">
+          <ViewToggle
+            value={view}
+            onChange={setView}
+            options={[
+              { key: "list", label: "List", icon: List },
+              { key: "kanban", label: "Kanban", icon: KanbanSquare },
+            ]}
+          />
+        </div>
       </div>
+      {view === "kanban" ? (
+        docs.data ? (
+          <DocumentKanban docs={docs.data} type={meta.type} />
+        ) : (
+          <Skeleton className="h-80 rounded-2xl" />
+        )
+      ) : (
+      <>
       <div className="scrollbar-none -mx-1 mb-6 flex gap-2 overflow-x-auto px-1 py-0.5">
         <Chip active={status === "open"} onClick={() => setStatus("open")} count={counts.open}>
           To do
@@ -117,6 +140,8 @@ export function DocumentList() {
           <DocumentTable docs={visible} />
         )}
       </Card>
+      </>
+      )}
     </div>
   );
 }

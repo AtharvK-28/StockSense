@@ -148,12 +148,40 @@ export function Dashboard() {
         </div>
       </div>
 
-      <section className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-5" aria-label="Key metrics">
+      <section className="grid gap-4 lg:grid-cols-2" aria-label="Operations overview">
+        <OpsCard
+          loading={loading}
+          title="Receipt"
+          icon={ArrowDownToLine}
+          listPath="/operations/receipts"
+          cta={k ? `${k.pendingReceipts.ready} to receive` : ""}
+          ctaPath="/operations/receipts?status=ready"
+          stats={k ? [
+            { label: "Late", value: k.pendingReceipts.late, bad: true },
+            { label: "operations", value: k.pendingReceipts.total },
+          ] : []}
+        />
+        <OpsCard
+          loading={loading}
+          title="Delivery"
+          icon={Truck}
+          listPath="/operations/deliveries"
+          cta={k ? `${k.pendingDeliveries.ready} to deliver` : ""}
+          ctaPath="/operations/deliveries?status=ready"
+          stats={k ? [
+            { label: "Late", value: k.pendingDeliveries.late, bad: true },
+            { label: "waiting", value: k.pendingDeliveries.waiting, warn: true },
+            { label: "operations", value: k.pendingDeliveries.total },
+          ] : []}
+        />
+      </section>
+
+      <section className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3" aria-label="Key metrics">
         <Kpi
           loading={loading}
           label="Products in stock"
           icon={PackageCheck}
-          to="/products?stock=in"
+          to="/stock"
           value={k?.inStock}
           sub={k ? `of ${k.totalProducts} products · ${fmtQty(k.totalUnits)} units` : "…"}
         />
@@ -168,27 +196,11 @@ export function Dashboard() {
         />
         <Kpi
           loading={loading}
-          label="Pending receipts"
-          icon={ArrowDownToLine}
-          to="/operations/receipts"
-          value={k?.pendingReceipts.total}
-          sub={k ? <LateSub late={k.pendingReceipts.late} extra={`${k.pendingReceipts.ready} ready`} /> : "…"}
-        />
-        <Kpi
-          loading={loading}
-          label="Pending deliveries"
-          icon={Truck}
-          to="/operations/deliveries"
-          value={k?.pendingDeliveries.total}
-          sub={k ? <LateSub late={k.pendingDeliveries.late} extra={`${k.pendingDeliveries.waiting} waiting`} /> : "…"}
-        />
-        <Kpi
-          loading={loading}
-          label="Transfers scheduled"
+          label="Internal transfers scheduled"
           icon={ArrowLeftRight}
           to="/operations/transfers"
           value={k?.scheduledTransfers.total}
-          sub={k ? <LateSub late={k.scheduledTransfers.late} extra="internal moves" /> : "…"}
+          sub={k ? <LateSub late={k.scheduledTransfers.late} extra="between locations" /> : "…"}
         />
       </section>
 
@@ -313,6 +325,59 @@ export function Dashboard() {
         </aside>
       </div>
     </div>
+  );
+}
+
+/** The mockup's big Receipt / Delivery cards: a "N to process" button plus late / waiting counts. */
+function OpsCard({
+  title,
+  icon: Icon,
+  listPath,
+  cta,
+  ctaPath,
+  stats,
+  loading,
+}: {
+  title: string;
+  icon: LucideIcon;
+  listPath: string;
+  cta: string;
+  ctaPath: string;
+  stats: { label: string; value: number; bad?: boolean; warn?: boolean }[];
+  loading: boolean;
+}) {
+  return (
+    <Card className="p-6 transition hover:shadow-lift">
+      <div className="flex items-center gap-3">
+        <span className="grid size-11 place-items-center rounded-full bg-brand-50 text-brand">
+          <Icon className="size-5" strokeWidth={2} />
+        </span>
+        <h2 className="text-[22px] font-semibold tracking-tight">{title}</h2>
+        <Link to={listPath} className="ml-auto text-sm font-semibold underline underline-offset-2">
+          View all
+        </Link>
+      </div>
+      <div className="mt-6 flex flex-wrap items-end justify-between gap-4">
+        {loading ? (
+          <Skeleton className="h-12 w-44 rounded-lg" />
+        ) : (
+          <Link to={ctaPath}>
+            <Button variant="dark" size="lg">
+              {cta}
+            </Button>
+          </Link>
+        )}
+        <ul className="space-y-1 text-right text-[15px]">
+          {loading
+            ? [0, 1].map((i) => <Skeleton key={i} className="ml-auto h-4 w-24" />)
+            : stats.map((st) => (
+                <li key={st.label} className={clsx(st.value > 0 && st.bad && "font-semibold text-bad", st.value > 0 && st.warn && "font-semibold text-warn")}>
+                  <span className="font-semibold">{st.value}</span> {st.label}
+                </li>
+              ))}
+        </ul>
+      </div>
+    </Card>
   );
 }
 

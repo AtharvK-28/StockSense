@@ -5,7 +5,7 @@ import { Link, useNavigate, useParams } from "react-router";
 import { ActivityFeed } from "../../components/ActivityFeed";
 import { Button, Card, CardHeader, EmptyState, ErrorNote, Field, Input, PageHeader, Select, Skeleton, StockBadge } from "../../components/ui";
 import { api, errorMessage } from "../../lib/api";
-import { docPath, fmtQty, fmtRelative } from "../../lib/format";
+import { docPath, fmtMoney, fmtQty, fmtRelative } from "../../lib/format";
 import { useAction, useCategories, useLocations } from "../../lib/queries";
 import type { DocumentDetail, LedgerEntry, ProductDetail } from "../../lib/types";
 import { UOM_OPTIONS, categoryVisual } from "../../lib/visual";
@@ -15,13 +15,14 @@ interface FormState {
   sku: string;
   categoryId: string;
   uom: string;
+  unitCost: string;
   minQty: string;
   maxQty: string;
   initialLocationId: string;
   initialQty: string;
 }
 
-const emptyForm: FormState = { name: "", sku: "", categoryId: "", uom: "Units", minQty: "", maxQty: "", initialLocationId: "", initialQty: "" };
+const emptyForm: FormState = { name: "", sku: "", categoryId: "", uom: "Units", unitCost: "", minQty: "", maxQty: "", initialLocationId: "", initialQty: "" };
 const num = (s: string) => (s.trim() === "" ? null : Number(s));
 
 export function ProductPage() {
@@ -48,6 +49,7 @@ export function ProductPage() {
         sku: product.sku,
         categoryId: product.category?.id ?? "",
         uom: product.uom,
+        unitCost: product.unitCost?.toString() ?? "",
         minQty: product.minQty?.toString() ?? "",
         maxQty: product.maxQty?.toString() ?? "",
       });
@@ -64,6 +66,7 @@ export function ProductPage() {
     sku: form.sku,
     categoryId: form.categoryId || null,
     uom: form.uom,
+    unitCost: num(form.unitCost),
     minQty: num(form.minQty),
     maxQty: num(form.maxQty),
   });
@@ -135,7 +138,9 @@ export function ProductPage() {
           ))}
         </datalist>
       </Field>
-      <div className="hidden sm:block" />
+      <Field label="Per unit cost (₹)" hint="Used for stock valuation">
+        <Input type="number" min={0} step="any" value={form.unitCost} onChange={set("unitCost")} placeholder="Optional" />
+      </Field>
       <Field label="Reorder at (min)" hint="Alert when total stock falls to this level">
         <Input type="number" min={0} step="any" value={form.minQty} onChange={set("minQty")} placeholder="Optional" />
       </Field>
@@ -296,6 +301,14 @@ export function ProductPage() {
               {fmtQty(p.onHand)} <span className="text-lg font-medium text-muted">{p.uom}</span>
             </p>
             <dl className="mt-6 space-y-3 border-t border-hairline pt-5 text-[15px]">
+              <div className="flex justify-between">
+                <dt className="text-muted">Free to use</dt>
+                <dd className="font-semibold">{fmtQty(p.freeQty)}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-muted">Per unit cost</dt>
+                <dd className="font-semibold">{fmtMoney(p.unitCost)}</dd>
+              </div>
               <div className="flex justify-between">
                 <dt className="text-muted">Incoming (open receipts)</dt>
                 <dd className="font-semibold text-ok">+{fmtQty(p.incoming)}</dd>

@@ -1,14 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { clsx } from "clsx";
-import { ArrowRight, Check, FileQuestion, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, Check, ChevronRight, CircleAlert, FileQuestion, Plus, Printer, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { ProductPicker, LocationSelect } from "../../components/pickers";
 import { useToast } from "../../components/toast";
-import { Button, Card, CardHeader, EmptyState, ErrorNote, Field, IconButton, Input, PageHeader, Skeleton, StatusBadge, Textarea } from "../../components/ui";
+import { docRoute } from "../../components/DocumentTable";
+import { Button, Card, CardHeader, EmptyState, ErrorNote, Field, IconButton, Input, PageHeader, Select, Skeleton, StatusBadge, Textarea } from "../../components/ui";
+import { useAuth } from "../../lib/auth";
 import { api, errorMessage } from "../../lib/api";
 import {
   DOC_TYPES,
+  DOC_TYPE_LIST,
+  STATUS_LABEL,
   docPath,
   docTypeBySlug,
   fmtDate,
@@ -20,7 +24,7 @@ import {
   toDateInput,
 } from "../../lib/format";
 import { useLocations, useProducts } from "../../lib/queries";
-import type { DocType, DocumentDetail, LocationOption, ProductRow } from "../../lib/types";
+import type { DocStatus, DocType, DocumentDetail, LocationOption, ProductRow } from "../../lib/types";
 
 type Action = "confirm" | "check" | "pick" | "pack" | "validate" | "cancel";
 
@@ -34,6 +38,7 @@ interface LineDraft {
 
 interface Draft {
   partnerName: string;
+  deliveryAddress: string;
   origin: string;
   sourceLocationId: string;
   destinationLocationId: string;
@@ -50,6 +55,7 @@ function initialDraft(type: DocType, locations: LocationOption[], productId?: st
   const second = locations.find((l) => l.id !== first)?.id ?? "";
   return {
     partnerName: "",
+    deliveryAddress: "",
     origin: "",
     sourceLocationId: type === "receipt" ? "" : first,
     destinationLocationId: type === "receipt" ? first : type === "transfer" ? second : "",
@@ -62,6 +68,7 @@ function initialDraft(type: DocType, locations: LocationOption[], productId?: st
 function draftFromDoc(doc: DocumentDetail): Draft {
   return {
     partnerName: doc.partnerName ?? "",
+    deliveryAddress: doc.deliveryAddress ?? "",
     origin: doc.origin ?? "",
     sourceLocationId: doc.sourceLocationId ?? "",
     destinationLocationId: doc.destinationLocationId ?? "",
@@ -81,6 +88,7 @@ function payload(type: DocType, d: Draft) {
   const [y, m, day] = d.scheduledDate.split("-").map(Number);
   return {
     partnerName: d.partnerName || null,
+    deliveryAddress: d.deliveryAddress || null,
     origin: d.origin || null,
     sourceLocationId: d.sourceLocationId || null,
     destinationLocationId: d.destinationLocationId || null,
@@ -97,47 +105,72 @@ function payload(type: DocType, d: Draft) {
   };
 }
 
-const STEPS: Record<DocType, string[]> = {
-  receipt: ["Draft", "Ready to receive", "Received"],
-  delivery: ["Draft", "Ready", "Picked", "Packed", "Shipped"],
-  transfer: ["Draft", "Ready to move", "Transferred"],
-  adjustment: ["Counted", "Applied"],
+/** The status bar from the mockups: Draft > (Waiting >) Ready > Done. */
+const STATUS_FLOW: Record<DocType, DocStatus[]> = {
+  receipt: ["draft", "ready", "done"],
+  delivery: ["draft", "waiting", "ready", "done"],
+  transfer: ["draft", "waiting", "ready", "done"],
+  adjustment: ["draft", "done"],
 };
 
-function stepIndex(doc: { type: DocType; status: string; pickedAt: string | null; packedAt: string | null } | null) {
-  if (!doc || doc.status === "draft") return 0;
-  if (doc.status === "done") return STEPS[doc.type].length - 1;
-  if (doc.type === "delivery") return doc.packedAt ? 3 : doc.pickedAt ? 2 : 1;
-  return 1;
+function StatusBar({ type, status }: { type: DocType; status: DocStatus }) {
+  if (status === "canceled") return <StatusBadge status="canceled" className="px-4 py-2 text-sm" />;
+  const flow = STATUS_FLOW[type];
+  const current = flow.indexOf(status);
+  return (
+    <ol className="flex items-center rounded-full border border-line bg-white p-1 text-sm" aria-label="Status">
+      {flow.map((step, i) => {
+        const past = i < current;
+        const active = i === current;
+        return (
+          <li key={step} className="flex items-center">
+            {i > 0 && <ChevronRight className={clsx("mx-0.5 size-4", past || active ? "text-ink" : "text-line")} />}
+            <span
+              aria-current={active ? "step" : undefined}
+              className={clsx(
+                "flex items-center gap-1 rounded-full px-3 py-1.5 font-semibold whitespace-nowrap",
+                active && (step === "waiting" ? "bg-warn-50 text-warn" : step === "done" ? "bg-ok-50 text-ok" : "bg-ink text-white"),
+                past && "text-ink",
+                !past && !active && "text-subtle",
+              )}
+            >
+              {past && <Check className="size-3.5" strokeWidth={3} />}
+              {STATUS_LABEL[step]}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
 }
 
 function primaryFor(type: DocType, doc: DocumentDetail | undefined): { action: Action; label: string } | null {
   if (!doc || doc.status === "draft") {
     if (type === "adjustment") return { action: "validate", label: "Apply adjustment" };
-    return { action: "confirm", label: doc ? "Confirm" : "Save & confirm" };
+    return { action: "confirm", label: doc ? "Mark as To Do" : "Save & mark as To Do" };
   }
   if (doc.status !== "ready") return null;
   switch (type) {
     case "receipt":
-      return { action: "validate", label: "Validate · receive stock" };
+      return { action: "validate", label: "Validate" };
     case "transfer":
-      return { action: "validate", label: "Validate transfer" };
+      return { action: "validate", label: "Validate" };
     case "adjustment":
       return { action: "validate", label: "Apply adjustment" };
     case "delivery":
       if (!doc.pickedAt) return { action: "pick", label: "Mark as picked" };
       if (!doc.packedAt) return { action: "pack", label: "Mark as packed" };
-      return { action: "validate", label: "Validate · ship" };
+      return { action: "validate", label: "Validate" };
   }
 }
 
 function hintFor(type: DocType, doc: DocumentDetail | undefined, sourceName: string) {
-  if (!doc) return type === "adjustment" ? "Applying sets stock to the counted quantities and logs each difference in the ledger." : "Save a draft to finish later, or confirm to schedule it.";
+  if (!doc) return type === "adjustment" ? "Applying sets stock to the counted quantities and logs each difference in the ledger." : "Save a draft to finish later, or mark it as To Do to schedule it.";
   switch (doc.status) {
     case "draft":
       if (type === "adjustment") return "Applying sets stock to the counted quantities and logs each difference in the ledger.";
-      if (type === "receipt") return "Confirm once the order is placed. Validate when the goods arrive.";
-      return `Confirming checks that ${sourceName} has enough stock.`;
+      if (type === "receipt") return "Mark as To Do once the order is placed — it moves to Ready. Validate when the goods arrive.";
+      return `Mark as To Do to schedule it. StockSense checks that ${sourceName} has enough stock: Ready if it does, Waiting if not.`;
     case "waiting":
       return `Not enough stock at ${sourceName} yet. This becomes Ready automatically as soon as stock arrives.`;
     case "ready":
@@ -161,6 +194,7 @@ export function DocumentPage() {
   const routerLocation = useLocation();
   const qc = useQueryClient();
   const toast = useToast();
+  const { user } = useAuth();
   const routeMeta = docTypeBySlug(kind);
 
   const docQuery = useQuery({
@@ -270,8 +304,6 @@ export function DocumentPage() {
     return l ? `${l.warehouse.code} / ${l.name}` : "the source location";
   };
   const primary = primaryFor(type, doc);
-  const steps = STEPS[type];
-  const current = stepIndex(doc ?? null);
   const open = !doc || isOpen(doc.status);
   const lineCount = editable ? draft!.lines.filter((l) => l.productId).length : doc!.lines.length;
 
@@ -285,200 +317,293 @@ export function DocumentPage() {
     return `Stock count at ${locName(src)}`;
   })();
 
+  const shortLines = (() => {
+    if (type !== "delivery" && type !== "transfer") return [];
+    if (editable) {
+      return draft!.lines
+        .filter((l) => l.productId && Number(l.quantity || 0) > (locationStock.data?.get(l.productId) ?? 0))
+        .map((l) => productMap.get(l.productId)?.name ?? "Product");
+    }
+    return open ? doc!.lines.filter((l) => l.available != null && l.available < l.quantity).map((l) => l.product.name) : [];
+  })();
+  const responsible = doc ? doc.createdBy.name : (user?.name ?? "—");
+  const busy = run.isPending;
+  const stockLocName = locName(editable ? draft!.sourceLocationId : doc!.sourceLocationId);
+
   return (
     <div>
-      <PageHeader
-        eyebrow={
-          <Link to={`/operations/${meta.slug}`} className="hover:underline">
-            {meta.plural}
-          </Link>
-        }
-        title={isNew ? `New ${meta.label.toLowerCase()}` : doc!.reference}
-        subtitle={subtitle}
-        actions={doc && <StatusBadge status={doc.status} className="px-3 py-1.5 text-sm" />}
-      />
+      <div className="print:hidden">
+        <PageHeader
+          eyebrow={
+            <Link to={`/operations/${meta.slug}`} className="hover:underline">
+              {meta.plural}
+            </Link>
+          }
+          title={isNew ? `New ${meta.label.toLowerCase()}` : doc!.reference}
+          subtitle={subtitle}
+        />
 
-      <div className="grid gap-8 lg:grid-cols-3">
-        <div className="min-w-0 space-y-8 lg:col-span-2">
-          <Card className="p-6">
-            <h2 className="mb-5 text-lg font-semibold tracking-tight">Details</h2>
-            {editable ? (
-              <DetailsForm type={type} draft={draft!} locations={locs} update={update} />
-            ) : (
-              <DetailsView doc={doc!} />
+        <div className="mb-8 flex flex-col gap-3 rounded-2xl border border-hairline bg-white p-3 shadow-card lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            {open && primary && (
+              <Button
+                variant="primary"
+                loading={busy && run.variables?.action === primary.action}
+                disabled={busy}
+                onClick={() => run.mutate({ action: primary.action, saveFirst: editable && dirty })}
+              >
+                {primary.label}
+              </Button>
             )}
-          </Card>
+            {doc?.status === "waiting" && (
+              <Button variant="outline" loading={busy && run.variables?.action === "check"} disabled={busy} onClick={() => run.mutate({ action: "check", saveFirst: false })}>
+                Check availability
+              </Button>
+            )}
+            {(isNew || (editable && dirty)) && (
+              <Button variant="subtle" disabled={busy} loading={busy && !run.variables?.action} onClick={() => run.mutate({ saveFirst: true })}>
+                {isNew ? "Save as draft" : "Save changes"}
+              </Button>
+            )}
+            {doc && (
+              <Button variant="subtle" icon={Printer} onClick={() => window.print()} title={doc.status === "done" ? "Print" : "Print a draft copy"}>
+                Print
+              </Button>
+            )}
+            {doc && open && (
+              <Button
+                variant="danger"
+                disabled={busy}
+                onClick={() => confirm(`Cancel ${doc.reference}? No stock will move.`) && run.mutate({ action: "cancel", saveFirst: false })}
+              >
+                Cancel
+              </Button>
+            )}
+            {isNew && (
+              <Button variant="ghost" onClick={() => navigate(-1)}>
+                Discard
+              </Button>
+            )}
+          </div>
+          <div className="scrollbar-none overflow-x-auto">
+            <StatusBar type={type} status={doc?.status ?? "draft"} />
+          </div>
+        </div>
+        {error && (
+          <div className="-mt-4 mb-8">
+            <ErrorNote>{error}</ErrorNote>
+          </div>
+        )}
 
-          <Card>
-            <CardHeader
-              title={type === "adjustment" ? "Counted products" : "Products"}
-              subtitle={
-                type === "adjustment"
-                  ? "Enter what you physically counted. The difference is logged as an adjustment."
-                  : type === "receipt"
-                    ? "What's arriving and how much"
-                    : `Availability shown at ${locName(editable ? draft!.sourceLocationId : doc!.sourceLocationId)}`
-              }
-            />
-            <div className="border-t border-hairline">
+        <div className="grid gap-8 lg:grid-cols-3">
+          <div className="min-w-0 space-y-8 lg:col-span-2">
+            <Card className="p-6">
+              {doc && <p className="mb-1 text-sm font-semibold text-muted">{doc.reference}</p>}
+              <h2 className="mb-5 text-lg font-semibold tracking-tight">Details</h2>
               {editable ? (
-                <LinesEditor
+                <DetailsForm
                   type={type}
-                  lines={draft!.lines}
-                  products={products.data ?? []}
-                  productMap={productMap}
-                  stock={locationStock.data}
-                  onChange={updateLine}
-                  onAdd={() => update({ lines: [...draft!.lines, blankLine()] })}
-                  onRemove={(key) => update({ lines: draft!.lines.filter((l) => l.key !== key) })}
+                  draft={draft!}
+                  locations={locs}
+                  update={update}
+                  responsible={responsible}
+                  onTypeChange={isNew ? (t) => navigate(`/operations/${DOC_TYPES[t].slug}/new`) : undefined}
                 />
               ) : (
-                <LinesView doc={doc!} />
+                <DetailsView doc={doc!} />
               )}
-            </div>
-          </Card>
+            </Card>
 
-          {doc && doc.moves.length > 0 && (
             <Card>
-              <CardHeader title="Stock ledger entries" subtitle="Written when this document was validated. Ledger entries can't be edited." />
-              <div className="overflow-x-auto border-t border-hairline">
-                <table className="w-full min-w-[560px] text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-hairline text-xs text-muted">
-                      <th className="py-3 pr-4 pl-6 font-semibold">Product</th>
-                      <th className="px-4 py-3 font-semibold">Location</th>
-                      <th className="px-4 py-3 text-right font-semibold">Change</th>
-                      <th className="py-3 pr-6 pl-4 text-right font-semibold">Balance after</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {doc.moves.map((m) => (
-                      <tr key={m.id} className="border-b border-hairline last:border-0">
-                        <td className="py-3 pr-4 pl-6 font-semibold">{m.product.name}</td>
-                        <td className="px-4 py-3 text-muted">
-                          {m.location.warehouse.code} / {m.location.name}
-                        </td>
-                        <td className={clsx("px-4 py-3 text-right font-semibold", m.quantityDelta > 0 ? "text-ok" : "text-bad")}>
-                          {fmtSigned(m.quantityDelta)} {m.product.uom}
-                        </td>
-                        <td className="py-3 pr-6 pl-4 text-right">
-                          {fmtQty(m.balanceAfter)} {m.product.uom}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <CardHeader
+                title={type === "adjustment" ? "Counted products" : "Products"}
+                subtitle={
+                  type === "adjustment"
+                    ? "Enter what you physically counted. The difference is logged as an adjustment."
+                    : type === "receipt"
+                      ? "What's arriving and how much"
+                      : `Availability shown at ${stockLocName}`
+                }
+              />
+              {shortLines.length > 0 && (
+                <div role="alert" className="mx-6 mb-4 flex gap-3 rounded-xl border border-bad/30 bg-bad-50 p-4 text-sm text-bad">
+                  <CircleAlert className="mt-0.5 size-5 shrink-0" />
+                  <div>
+                    <p className="font-semibold">
+                      {shortLines.length === 1 ? "1 product is" : `${shortLines.length} products are`} not in stock at {stockLocName}
+                    </p>
+                    <p className="mt-0.5">
+                      {shortLines.join(", ")} — the {meta.label.toLowerCase()} will wait until stock arrives, then become Ready automatically.
+                    </p>
+                  </div>
+                </div>
+              )}
+              <div className="border-t border-hairline">
+                {editable ? (
+                  <LinesEditor
+                    type={type}
+                    lines={draft!.lines}
+                    products={products.data ?? []}
+                    productMap={productMap}
+                    stock={locationStock.data}
+                    onChange={updateLine}
+                    onAdd={() => update({ lines: [...draft!.lines, blankLine()] })}
+                    onRemove={(key) => update({ lines: draft!.lines.filter((l) => l.key !== key) })}
+                  />
+                ) : (
+                  <LinesView doc={doc!} />
+                )}
               </div>
             </Card>
-          )}
-        </div>
 
-        <aside className="lg:sticky lg:top-28 lg:self-start">
-          <Card className="p-6 shadow-pop">
-            <div className="flex items-baseline justify-between gap-2">
-              <p className="text-[22px] font-semibold tracking-tight">{lineCount} <span className="text-base font-normal text-muted">product{lineCount === 1 ? "" : "s"}</span></p>
-              {doc && isLate(doc) && <span className="text-sm font-semibold text-bad">Late</span>}
-            </div>
-
-            <ol className="mt-5 space-y-0">
-              {steps.map((label, i) => {
-                const canceled = doc?.status === "canceled";
-                const waiting = doc?.status === "waiting" && i === 1;
-                const done = !canceled && (i < current || doc?.status === "done");
-                const active = !canceled && i === current && doc?.status !== "done";
-                return (
-                  <li key={label} className="relative flex gap-3 pb-4 last:pb-0">
-                    {i < steps.length - 1 && <span className={clsx("absolute top-6 left-[11px] h-[calc(100%-16px)] w-0.5", done ? "bg-ink" : "bg-hairline")} />}
-                    <span
-                      className={clsx(
-                        "relative z-10 grid size-6 shrink-0 place-items-center rounded-full border-2",
-                        done && "border-ink bg-ink text-white",
-                        active && clsx("bg-white", waiting ? "border-warn" : "border-brand"),
-                        !done && !active && "border-line bg-white",
-                      )}
-                    >
-                      {done ? <Check className="size-3.5" strokeWidth={3} /> : active && <span className={clsx("size-2 rounded-full", waiting ? "bg-warn" : "bg-brand")} />}
-                    </span>
-                    <span className={clsx("pt-0.5 text-[15px]", active ? "font-semibold" : done ? "text-ink" : "text-muted", canceled && "line-through")}>
-                      {waiting ? "Waiting for stock" : label}
-                    </span>
-                  </li>
-                );
-              })}
-            </ol>
-
-            <p className="mt-5 rounded-xl bg-canvas p-4 text-sm leading-relaxed text-muted">{hintFor(type, doc, locName(doc?.sourceLocationId ?? draft?.sourceLocationId))}</p>
-
-            {error && <div className="mt-4"><ErrorNote>{error}</ErrorNote></div>}
-
-            {open && (
-              <div className="mt-5 space-y-3">
-                {primary ? (
-                  <Button
-                    variant="primary"
-                    size="lg"
-                    className="w-full"
-                    loading={run.isPending && run.variables?.action === primary.action}
-                    disabled={run.isPending}
-                    onClick={() => run.mutate({ action: primary.action, saveFirst: editable && dirty })}
-                  >
-                    {primary.label}
-                  </Button>
-                ) : doc?.status === "waiting" ? (
-                  <Button variant="outline" size="lg" className="w-full" loading={run.isPending} onClick={() => run.mutate({ action: "check", saveFirst: false })}>
-                    Check availability again
-                  </Button>
-                ) : null}
-
-                {isNew && (
-                  <Button variant="outline" size="lg" className="w-full" disabled={run.isPending} loading={run.isPending && !run.variables?.action} onClick={() => run.mutate({ saveFirst: true })}>
-                    Save as draft
-                  </Button>
-                )}
-                {!isNew && editable && dirty && (
-                  <Button variant="outline" size="lg" className="w-full" disabled={run.isPending} loading={run.isPending && !run.variables?.action} onClick={() => run.mutate({ saveFirst: true })}>
-                    Save changes
-                  </Button>
-                )}
-                {doc && (
-                  <button
-                    type="button"
-                    disabled={run.isPending}
-                    onClick={() => confirm(`Cancel ${doc.reference}? No stock will move.`) && run.mutate({ action: "cancel", saveFirst: false })}
-                    className="w-full py-2 text-center text-sm font-semibold text-muted underline underline-offset-2 hover:text-bad"
-                  >
-                    Cancel {meta.label.toLowerCase()}
-                  </button>
-                )}
-              </div>
+            {doc && doc.moves.length > 0 && (
+              <Card>
+                <CardHeader title="Stock ledger entries" subtitle="Written when this document was validated. Ledger entries can't be edited." />
+                <div className="overflow-x-auto border-t border-hairline">
+                  <table className="w-full min-w-[560px] text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-hairline text-xs text-muted">
+                        <th className="py-3 pr-4 pl-6 font-semibold">Product</th>
+                        <th className="px-4 py-3 font-semibold">Location</th>
+                        <th className="px-4 py-3 text-right font-semibold">Change</th>
+                        <th className="py-3 pr-6 pl-4 text-right font-semibold">Balance after</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {doc.moves.map((m) => (
+                        <tr key={m.id} className="border-b border-hairline last:border-0">
+                          <td className="py-3 pr-4 pl-6 font-semibold">{m.product.name}</td>
+                          <td className="px-4 py-3 text-muted">
+                            {m.location.warehouse.code} / {m.location.name}
+                          </td>
+                          <td className={clsx("px-4 py-3 text-right font-semibold", m.quantityDelta > 0 ? "text-ok" : "text-bad")}>
+                            {fmtSigned(m.quantityDelta)} {m.product.uom}
+                          </td>
+                          <td className="py-3 pr-6 pl-4 text-right">
+                            {fmtQty(m.balanceAfter)} {m.product.uom}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
             )}
+          </div>
 
-            {doc && (
+          <aside className="lg:sticky lg:top-28 lg:self-start">
+            <Card className="p-6 shadow-pop">
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="text-[22px] font-semibold tracking-tight">
+                  {lineCount} <span className="text-base font-normal text-muted">product{lineCount === 1 ? "" : "s"}</span>
+                </p>
+                {doc && isLate(doc) ? <span className="text-sm font-semibold text-bad">Late</span> : doc && <StatusBadge status={doc.status} />}
+              </div>
+
+              <p className="mt-4 rounded-xl bg-canvas p-4 text-sm leading-relaxed text-muted">
+                {hintFor(type, doc, locName(doc?.sourceLocationId ?? draft?.sourceLocationId))}
+              </p>
+
+              {type === "delivery" && doc && doc.status !== "canceled" && (
+                <ul className="mt-5 space-y-2.5 text-[15px]">
+                  {[
+                    { label: "Picked", at: doc.pickedAt },
+                    { label: "Packed", at: doc.packedAt },
+                    { label: "Shipped", at: doc.validatedAt },
+                  ].map((step) => (
+                    <li key={step.label} className="flex items-center gap-3">
+                      <span className={clsx("grid size-6 place-items-center rounded-full border-2", step.at ? "border-ink bg-ink text-white" : "border-line")}>
+                        {step.at && <Check className="size-3.5" strokeWidth={3} />}
+                      </span>
+                      <span className={clsx(step.at ? "font-semibold" : "text-muted")}>{step.label}</span>
+                      {step.at && <span className="ml-auto text-xs text-muted">{fmtDateTime(step.at)}</span>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
               <dl className="mt-5 space-y-2 border-t border-hairline pt-5 text-sm">
                 <div className="flex justify-between gap-4">
-                  <dt className="text-muted">Created by</dt>
-                  <dd className="text-right font-medium">{doc.createdBy.name}</dd>
+                  <dt className="text-muted">Responsible</dt>
+                  <dd className="text-right font-medium">{responsible}</dd>
                 </div>
-                <div className="flex justify-between gap-4">
-                  <dt className="text-muted">Created</dt>
-                  <dd className="text-right font-medium">{fmtDateTime(doc.createdAt)}</dd>
-                </div>
-                {doc.pickedAt && (
+                {doc && (
                   <div className="flex justify-between gap-4">
-                    <dt className="text-muted">Picked</dt>
-                    <dd className="text-right font-medium">{fmtDateTime(doc.pickedAt)}</dd>
+                    <dt className="text-muted">Created</dt>
+                    <dd className="text-right font-medium">{fmtDateTime(doc.createdAt)}</dd>
                   </div>
                 )}
-                {doc.packedAt && (
+                {doc?.validatedAt && (
                   <div className="flex justify-between gap-4">
-                    <dt className="text-muted">Packed</dt>
-                    <dd className="text-right font-medium">{fmtDateTime(doc.packedAt)}</dd>
+                    <dt className="text-muted">Validated by</dt>
+                    <dd className="text-right font-medium">{doc.validatedBy?.name ?? "—"}</dd>
                   </div>
                 )}
               </dl>
-            )}
-          </Card>
-        </aside>
+            </Card>
+          </aside>
+        </div>
+      </div>
+      {doc && <PrintSheet doc={doc} />}
+    </div>
+  );
+}
+
+/** Print-only layout used by the Print button. */
+function PrintSheet({ doc }: { doc: DocumentDetail }) {
+  const meta = DOC_TYPES[doc.type];
+  const route = docRoute(doc);
+  const rows: [string, string][] = [
+    ["Status", STATUS_LABEL[doc.status]],
+    ["Schedule date", fmtDate(doc.scheduledDate)],
+    ["From", doc.type === "receipt" ? (doc.partnerName ?? route.from) : route.from],
+    ["To", doc.type === "delivery" ? (doc.partnerName ?? route.to) : route.to],
+    ["Responsible", doc.createdBy.name],
+  ];
+  if (doc.deliveryAddress) rows.push(["Delivery address", doc.deliveryAddress]);
+  if (doc.origin) rows.push(["Source document", doc.origin]);
+  if (doc.validatedAt) rows.push(["Validated", `${fmtDateTime(doc.validatedAt)} by ${doc.validatedBy?.name ?? "—"}`]);
+  return (
+    <div className="hidden text-black print:block">
+      <div className="flex items-start justify-between border-b-2 border-black pb-4">
+        <div>
+          <p className="text-2xl font-bold">StockSense</p>
+          <p className="text-sm">{meta.label}</p>
+        </div>
+        <p className="text-2xl font-bold">{doc.reference}</p>
+      </div>
+      <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
+        {rows.map(([k, v]) => (
+          <div key={k}>
+            <dt className="text-xs uppercase">{k}</dt>
+            <dd className="font-semibold">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      <table className="mt-8 w-full border-collapse text-left text-sm">
+        <thead>
+          <tr className="border-b-2 border-black">
+            <th className="py-2">Product</th>
+            <th className="py-2 text-right">{doc.type === "adjustment" ? "Counted" : "Quantity"}</th>
+            <th className="py-2 text-right">Unit</th>
+          </tr>
+        </thead>
+        <tbody>
+          {doc.lines.map((l) => (
+            <tr key={l.id} className="border-b border-gray-300">
+              <td className="py-2">
+                [{l.product.sku}] {l.product.name}
+              </td>
+              <td className="py-2 text-right">{fmtQty(doc.type === "adjustment" ? l.countedQuantity : l.quantity)}</td>
+              <td className="py-2 text-right">{l.product.uom}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {doc.notes && <p className="mt-6 text-sm">Notes: {doc.notes}</p>}
+      <div className="mt-20 grid grid-cols-2 gap-16 text-sm">
+        <p className="border-t border-black pt-2">Prepared by</p>
+        <p className="border-t border-black pt-2">Received / signed by</p>
       </div>
     </div>
   );
@@ -512,10 +637,36 @@ function toastFor(doc: DocumentDetail, action?: Action) {
   }
 }
 
-function DetailsForm({ type, draft, locations, update }: { type: DocType; draft: Draft; locations: LocationOption[]; update: (p: Partial<Draft>) => void }) {
-  const partnerLabel = DOC_TYPES[type].partnerLabel;
+function DetailsForm({
+  type,
+  draft,
+  locations,
+  update,
+  responsible,
+  onTypeChange,
+}: {
+  type: DocType;
+  draft: Draft;
+  locations: LocationOption[];
+  update: (p: Partial<Draft>) => void;
+  responsible: string;
+  onTypeChange?: (t: DocType) => void;
+}) {
+  const partnerLabel = type === "receipt" ? "Receive from" : type === "delivery" ? "Deliver to (contact)" : null;
   return (
     <div className="grid gap-5 sm:grid-cols-2">
+      <Field label="Operation type" hint={onTypeChange ? undefined : "Fixed once the document is created"}>
+        <Select value={type} disabled={!onTypeChange} onChange={(e) => onTypeChange?.(e.target.value as DocType)}>
+          {DOC_TYPE_LIST.map((m) => (
+            <option key={m.type} value={m.type}>
+              {m.label}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <Field label="Responsible" hint="Filled in with the logged-in user">
+        <Input value={responsible} disabled readOnly />
+      </Field>
       {partnerLabel && (
         <Field label={partnerLabel}>
           <Input value={draft.partnerName} onChange={(e) => update({ partnerName: e.target.value })} placeholder={type === "receipt" ? "e.g. Tata Steel Ltd" : "e.g. Sharma Furniture"} />
@@ -536,7 +687,12 @@ function DetailsForm({ type, draft, locations, update }: { type: DocType; draft:
           <LocationSelect value={draft.destinationLocationId} onChange={(v) => update({ destinationLocationId: v })} locations={locations} exclude={type === "transfer" ? draft.sourceLocationId : undefined} />
         </Field>
       )}
-      <Field label={type === "adjustment" ? "Count date" : "Scheduled date"}>
+      {type === "delivery" && (
+        <Field label="Delivery address" className="sm:col-span-2">
+          <Input value={draft.deliveryAddress} onChange={(e) => update({ deliveryAddress: e.target.value })} placeholder="Street, city, PIN" />
+        </Field>
+      )}
+      <Field label={type === "adjustment" ? "Count date" : "Schedule date"}>
         <Input type="date" value={draft.scheduledDate} onChange={(e) => update({ scheduledDate: e.target.value })} />
       </Field>
       <Field label="Notes" className="sm:col-span-2">
@@ -549,8 +705,13 @@ function DetailsForm({ type, draft, locations, update }: { type: DocType; draft:
 function DetailsView({ doc }: { doc: DocumentDetail }) {
   const meta = DOC_TYPES[doc.type];
   const loc = (l: DocumentDetail["sourceLocation"]) => (l ? `${l.warehouse.name} / ${l.name}` : "—");
-  const rows: [string, React.ReactNode][] = [];
-  if (meta.partnerLabel) rows.push([meta.partnerLabel, doc.partnerName ?? "—"]);
+  const rows: [string, React.ReactNode][] = [
+    ["Operation type", meta.label],
+    ["Responsible", doc.createdBy.name],
+  ];
+  if (doc.type === "receipt") rows.push(["Receive from", doc.partnerName ?? "—"]);
+  if (doc.type === "delivery") rows.push(["Deliver to (contact)", doc.partnerName ?? "—"]);
+  if (doc.deliveryAddress) rows.push(["Delivery address", doc.deliveryAddress]);
   if (doc.origin) rows.push(["Source document", doc.origin]);
   if (doc.type === "transfer") {
     rows.push([
@@ -561,13 +722,13 @@ function DetailsView({ doc }: { doc: DocumentDetail }) {
     ]);
   } else if (doc.type === "receipt") rows.push(["Receive into", loc(doc.destinationLocation)]);
   else rows.push([doc.type === "adjustment" ? "Location counted" : "Ship from", loc(doc.sourceLocation)]);
-  rows.push([doc.type === "adjustment" ? "Count date" : "Scheduled", fmtDate(doc.scheduledDate)]);
+  rows.push([doc.type === "adjustment" ? "Count date" : "Schedule date", fmtDate(doc.scheduledDate)]);
   if (doc.notes) rows.push(["Notes", doc.notes]);
 
   return (
     <dl className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
       {rows.map(([label, value]) => (
-        <div key={label} className={clsx(label === "Notes" && "sm:col-span-2")}>
+        <div key={label} className={clsx((label === "Notes" || label === "Delivery address") && "sm:col-span-2")}>
           <dt className="text-sm text-muted">{label}</dt>
           <dd className="mt-0.5 text-[15px] font-medium">{value}</dd>
         </div>
@@ -621,7 +782,7 @@ function LinesEditor({
               const counted = line.countedQuantity === "" ? null : Number(line.countedQuantity);
               const diff = counted == null ? null : counted - available;
               return (
-                <tr key={line.key} className="border-b border-hairline align-top last:border-0">
+                <tr key={line.key} className={clsx("border-b border-hairline align-top last:border-0", short && "bg-bad-50/70")}>
                   <td className="py-3 pr-3 pl-6">
                     <ProductPicker value={line.productId} onChange={(pid) => onChange(line.key, { productId: pid })} products={products} />
                   </td>
@@ -701,12 +862,11 @@ function LinesView({ doc }: { doc: DocumentDetail }) {
             const diff = done ? l.quantity : l.countedQuantity != null && recorded != null ? l.countedQuantity - recorded : null;
             const short = showAvailable && l.available != null && l.available < l.quantity;
             return (
-              <tr key={l.id} className="border-b border-hairline last:border-0">
+              <tr key={l.id} className={clsx("border-b border-hairline last:border-0", short && "bg-bad-50/70")}>
                 <td className="py-3.5 pr-4 pl-6">
-                  <Link to={`/products/${l.productId}`} className="font-semibold hover:underline">
-                    {l.product.name}
+                  <Link to={`/products/${l.productId}`} className={clsx("font-semibold hover:underline", short && "text-bad")}>
+                    <span className="font-mono text-xs text-muted">[{l.product.sku}]</span> {l.product.name}
                   </Link>
-                  <div className="font-mono text-xs text-muted">{l.product.sku}</div>
                 </td>
                 {isAdjustment && <td className="px-4 py-3.5 text-right text-muted">{fmtQty(recorded)}</td>}
                 <td className="px-4 py-3.5 text-right font-semibold whitespace-nowrap">

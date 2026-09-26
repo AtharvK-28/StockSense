@@ -38,7 +38,8 @@ export function Profile() {
           <Card className="flex flex-col items-center p-8 text-center shadow-pop">
             <Avatar name={user.name} size="lg" />
             <h2 className="mt-4 text-[26px] font-semibold tracking-tight">{user.name}</h2>
-            <p className="flex items-center gap-1.5 text-sm font-medium text-muted">
+            <p className="text-sm text-muted">@{user.loginId}</p>
+            <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-muted">
               <ShieldCheck className="size-4" />
               {user.role === "manager" ? "Inventory manager" : "Warehouse staff"}
             </p>

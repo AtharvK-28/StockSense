@@ -1,0 +1,103 @@
+@import "tailwindcss";
+@import "@fontsource-variable/dm-sans";
+
+/* Airbnb-inspired tokens: near-black ink on white, one coral accent, soft layered shadows. */
+@theme {
+  --font-sans: "DM Sans Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, monospace;
+
+  --color-brand: #ff385c;
+  --color-brand-600: #e31c5f;
+  --color-brand-700: #d70466;
+  --color-brand-50: #fff1f3;
+  --color-brand-100: #ffe0e6;
+
+  --color-ink: #222222;
+  --color-muted: #6a6a6a;
+  --color-subtle: #929292;
+  --color-line: #dddddd;
+  --color-hairline: #ebebeb;
+  --color-canvas: #f7f7f7;
+
+  --color-ok: #008a05;
+  --color-ok-50: #e9f6ea;
+  --color-warn: #b25e09;
+  --color-warn-50: #fff4e5;
+  --color-info: #2c5bdb;
+  --color-info-50: #edf2ff;
+  --color-bad: #c13515;
+  --color-bad-50: #fdeeea;
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.08), 0 4px 12px rgb(0 0 0 / 0.05);
+  --shadow-pop: 0 6px 16px rgb(0 0 0 / 0.12);
+  --shadow-lift: 0 6px 20px rgb(0 0 0 / 0.18);
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-white text-ink font-sans;
+    font-feature-settings: "ss01";
+  }
+  ::selection {
+    background: var(--color-brand-100);
+  }
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+}
+
+@utility brand-gradient {
+  background-image: linear-gradient(to right, #e61e4d 0%, #e31c5f 50%, #d70466 100%);
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+}
+@keyframes slide-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
+@utility animate-fade-in {
+  animation: fade-in 160ms ease-out;
+}
+@utility animate-rise-in {
+  animation: rise-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@utility animate-slide-in {
+  animation: slide-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}

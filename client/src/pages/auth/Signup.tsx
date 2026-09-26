@@ -7,7 +7,7 @@ import { Button, ErrorNote } from "../../components/ui";
 import { api, errorMessage } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import type { Role, User } from "../../lib/types";
-import { AuthShell, FloatingInput, InputStack, PasswordRules, passwordOk } from "./AuthShell";
+import { AuthShell, FloatingInput, InputStack, PasswordRules, loginIdOk, passwordOk } from "./AuthShell";
 
 const ROLES: { value: Role; title: string; blurb: string; icon: typeof Forklift }[] = [
   { value: "manager", title: "Inventory manager", blurb: "Oversee stock, approve operations, configure warehouses", icon: ClipboardList },
@@ -17,16 +17,23 @@ const ROLES: { value: Role; title: string; blurb: string; icon: typeof Forklift 
 export function Signup() {
   const { setUser } = useAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ name: "", email: "", password: "", role: "manager" as Role });
+  const [form, setForm] = useState({ loginId: "", name: "", email: "", password: "", confirm: "", role: "manager" as Role });
   const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [key]: e.target.value });
 
   const signup = useMutation({
-    mutationFn: () => api<{ user: User }>("/auth/signup", { method: "POST", body: form }),
+    mutationFn: () =>
+      api<{ user: User }>("/auth/signup", {
+        method: "POST",
+        body: { loginId: form.loginId, name: form.name || undefined, email: form.email, password: form.password, role: form.role },
+      }),
     onSuccess: ({ user }) => {
       setUser(user);
       navigate("/", { replace: true });
     },
   });
+
+  const loginIdInvalid = form.loginId.length > 0 && !loginIdOk(form.loginId);
+  const mismatch = form.confirm.length > 0 && form.confirm !== form.password;
 
   return (
     <AuthShell
@@ -49,11 +56,17 @@ export function Signup() {
         className="space-y-5"
       >
         <div>
-          <InputStack>
-            <FloatingInput label="Full name" autoComplete="name" required value={form.name} onChange={set("name")} />
-            <FloatingInput label="Work email" type="email" autoComplete="email" required value={form.email} onChange={set("email")} />
-            <FloatingInput label="Password" type="password" autoComplete="new-password" required value={form.password} onChange={set("password")} />
+          <InputStack invalid={loginIdInvalid || mismatch}>
+            <FloatingInput label="Enter Login ID" autoComplete="username" required value={form.loginId} onChange={set("loginId")} maxLength={12} />
+            <FloatingInput label="Enter Email ID" type="email" autoComplete="email" required value={form.email} onChange={set("email")} />
+            <FloatingInput label="Full name (optional)" autoComplete="name" value={form.name} onChange={set("name")} />
+            <FloatingInput label="Enter Password" type="password" autoComplete="new-password" required value={form.password} onChange={set("password")} />
+            <FloatingInput label="Re-Enter Password" type="password" autoComplete="new-password" required value={form.confirm} onChange={set("confirm")} />
           </InputStack>
+          <p className={clsx("mt-2 text-[13px]", loginIdInvalid ? "text-bad" : "text-muted")}>
+            Login ID: 6–12 characters — letters, numbers, dot or underscore. Must be unique.
+          </p>
+          {mismatch && <p className="mt-1 text-[13px] text-bad">Passwords don't match</p>}
           {form.password && <PasswordRules password={form.password} />}
         </div>
 
@@ -78,8 +91,15 @@ export function Signup() {
         </fieldset>
 
         {signup.isError && <ErrorNote>{errorMessage(signup.error)}</ErrorNote>}
-        <Button type="submit" variant="primary" size="lg" className="w-full" loading={signup.isPending} disabled={!passwordOk(form.password)}>
-          Agree and continue
+        <Button
+          type="submit"
+          variant="primary"
+          size="lg"
+          className="w-full"
+          loading={signup.isPending}
+          disabled={!loginIdOk(form.loginId) || !passwordOk(form.password) || form.password !== form.confirm}
+        >
+          Sign up
         </Button>
       </form>
     </AuthShell>

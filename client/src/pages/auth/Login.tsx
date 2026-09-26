@@ -8,18 +8,18 @@ import { useAuth } from "../../lib/auth";
 import type { User } from "../../lib/types";
 import { AuthShell, FloatingInput, InputStack } from "./AuthShell";
 
-const DEMO = { email: "manager@stocksense.app", password: "Demo@1234" };
+const DEMO = { login: "manager", password: "Demo@1234" };
 
 export function Login() {
   const { setUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from ?? "/";
-  const [email, setEmail] = useState("");
+  const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
 
-  const login = useMutation({
-    mutationFn: (body: { email: string; password: string }) => api<{ user: User }>("/auth/login", { method: "POST", body }),
+  const signIn = useMutation({
+    mutationFn: (body: { login: string; password: string }) => api<{ user: User }>("/auth/login", { method: "POST", body }),
     onSuccess: ({ user }) => {
       setUser(user);
       navigate(from, { replace: true });
@@ -30,35 +30,32 @@ export function Login() {
     <AuthShell
       title="Log in"
       heading="Welcome back to StockSense"
-      footer={
-        <>
-          New here?{" "}
-          <Link to="/signup" className="font-semibold text-ink underline underline-offset-2">
-            Create an account
-          </Link>
-        </>
-      }
     >
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          login.mutate({ email, password });
+          signIn.mutate({ login, password });
         }}
         className="space-y-4"
       >
-        <InputStack invalid={login.isError}>
-          <FloatingInput label="Email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+        <InputStack invalid={signIn.isError}>
+          <FloatingInput label="Login ID" autoComplete="username" required value={login} onChange={(e) => setLogin(e.target.value)} />
           <FloatingInput label="Password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
         </InputStack>
-        {login.isError && <ErrorNote>{errorMessage(login.error)}</ErrorNote>}
-        <div className="flex justify-end">
-          <Link to="/forgot-password" state={{ email }} className="text-sm font-semibold underline underline-offset-2">
+        <p className="text-[13px] text-muted">You can also use the email you signed up with.</p>
+        {signIn.isError && <ErrorNote>{errorMessage(signIn.error)}</ErrorNote>}
+        <Button type="submit" variant="primary" size="lg" className="w-full" loading={signIn.isPending}>
+          Sign in
+        </Button>
+        <p className="text-center text-sm">
+          <Link to="/forgot-password" className="font-semibold underline underline-offset-2">
             Forgot password?
           </Link>
-        </div>
-        <Button type="submit" variant="primary" size="lg" className="w-full" loading={login.isPending}>
-          Continue
-        </Button>
+          <span className="mx-2 text-line">|</span>
+          <Link to="/signup" className="font-semibold underline underline-offset-2">
+            Sign up
+          </Link>
+        </p>
       </form>
 
       <div className="my-6 flex items-center gap-4 text-xs text-muted">
@@ -71,17 +68,17 @@ export function Login() {
         size="lg"
         icon={Sparkles}
         className="w-full"
-        disabled={login.isPending}
+        disabled={signIn.isPending}
         onClick={() => {
-          setEmail(DEMO.email);
+          setLogin(DEMO.login);
           setPassword(DEMO.password);
-          login.mutate(DEMO);
+          signIn.mutate(DEMO);
         }}
       >
         Explore with the demo account
       </Button>
       <p className="mt-3 text-center text-xs text-muted">
-        {DEMO.email} · {DEMO.password}
+        Login ID <span className="font-semibold">{DEMO.login}</span> · {DEMO.password}
       </p>
     </AuthShell>
   );

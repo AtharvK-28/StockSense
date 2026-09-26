@@ -130,11 +130,7 @@ export function OtpInput({ value, onChange, disabled }: { value: string; onChang
 }
 
 export function PasswordRules({ password }: { password: string }) {
-  const rules = [
-    { ok: password.length >= 8, label: "At least 8 characters" },
-    { ok: /[A-Za-z]/.test(password), label: "Contains a letter" },
-    { ok: /\d/.test(password), label: "Contains a number" },
-  ];
+  const rules = passwordChecks(password);
   return (
     <ul className="mt-3 space-y-1 text-[13px]">
       {rules.map((r) => (
@@ -147,4 +143,14 @@ export function PasswordRules({ password }: { password: string }) {
   );
 }
 
-export const passwordOk = (p: string) => p.length >= 8 && /[A-Za-z]/.test(p) && /\d/.test(p);
+function passwordChecks(p: string) {
+  return [
+    { ok: p.length > 8, label: "More than 8 characters" },
+    { ok: /[a-z]/.test(p), label: "A lowercase letter" },
+    { ok: /[A-Z]/.test(p), label: "An uppercase letter" },
+    { ok: /[^A-Za-z0-9]/.test(p), label: "A special character" },
+  ];
+}
+
+export const passwordOk = (p: string) => passwordChecks(p).every((r) => r.ok);
+export const loginIdOk = (id: string) => /^[A-Za-z0-9._]{6,12}$/.test(id.trim());

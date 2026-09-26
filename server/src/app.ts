@@ -3,6 +3,7 @@ import path from "node:path";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import express from "express";
+import { prisma } from "./db";
 import { env } from "./env";
 import { requireAuth } from "./lib/auth";
 import { eventsHandler } from "./lib/events";
@@ -33,8 +34,13 @@ export function createApp() {
   app.use(cookieParser());
   app.use(requestLogger);
 
-  app.get("/api/health", (_req, res) => {
-    res.json({ ok: true });
+  app.get("/api/health", async (_req, res) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      res.json({ ok: true, database: "connected" });
+    } catch {
+      res.status(503).json({ ok: false, database: "unavailable" });
+    }
   });
   app.use("/api/auth", authRouter);
 

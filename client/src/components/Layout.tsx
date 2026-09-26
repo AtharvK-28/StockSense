@@ -506,10 +506,10 @@ function CreateMenu() {
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-label="Create"
-        className="flex h-11 items-center gap-2 rounded-full border border-line bg-white px-3.5 text-sm font-semibold transition hover:shadow-card md:pr-4 md:pl-3"
+        className="flex h-11 items-center gap-2 rounded-full border border-line bg-white px-3.5 text-sm font-semibold transition hover:shadow-card lg:pr-4 lg:pl-3"
       >
         <Plus className="size-4" strokeWidth={2.5} />
-        <span className="hidden md:inline">Create</span>
+        <span className="hidden lg:inline">Create</span>
       </button>
       {open && (
         <div className="animate-rise-in absolute top-full right-0 z-40 mt-2 w-60 overflow-hidden rounded-xl border border-hairline bg-white py-2 shadow-pop">
@@ -568,7 +568,7 @@ export function Layout() {
           </div>
           <span
             title={live ? "Live — updates appear instantly" : "Reconnecting…"}
-            className="hidden items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold text-muted md:flex"
+            className="hidden items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold text-muted lg:flex"
           >
             <span className="relative flex size-2">
               {live && <span className="absolute inline-flex size-full animate-ping rounded-full bg-ok opacity-60" />}

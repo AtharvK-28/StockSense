@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "../db";
 import { managerOnly } from "../lib/auth";
 import { broadcast } from "../lib/events";
+import { audit, diff } from "../services/audit";
 import { badRequest, notFound } from "../lib/http";
 import { OPEN_STATUSES, applyDocument, createDocument } from "../services/documents";
 import { ZERO, onHandByProduct, reservedByProduct, stockStatus, suggestedReorderQty, warehouseLocationIds } from "../services/stock";
@@ -118,6 +119,7 @@ productsRouter.post("/", managerOnly, async (req, res) => {
       );
       await applyDocument(tx, doc.id, userId);
     }
+    await audit(tx, { userId, action: "product.create", entityType: "product", entityId: product.id, summary: `Created product ${product.sku} ${product.name}` });
     return product;
   });
   broadcast("products");
@@ -173,7 +175,17 @@ productsRouter.get("/:id", async (req, res) => {
 productsRouter.put("/:id", managerOnly, async (req, res) => {
   const id = uuid.parse(req.params.id);
   const data = updateSchema.parse(req.body);
+  const before = await prisma.product.findUnique({ where: { id } });
+  if (!before) throw notFound("Product not found");
   const product = await prisma.product.update({ where: { id }, data });
+  await audit(prisma, {
+    userId: req.user!.id,
+    action: "product.update",
+    entityType: "product",
+    entityId: id,
+    summary: `Updated product ${product.sku} ${product.name}`,
+    changes: diff(before, product, ["name", "sku", "categoryId", "uom", "unitCost", "minQty", "maxQty"]),
+  });
   broadcast("products");
   res.json({ product });
 });
@@ -181,7 +193,17 @@ productsRouter.put("/:id", managerOnly, async (req, res) => {
 productsRouter.put("/:id/rule", managerOnly, async (req, res) => {
   const id = uuid.parse(req.params.id);
   const data = ruleSchema.parse(req.body);
+  const before = await prisma.product.findUnique({ where: { id } });
+  if (!before) throw notFound("Product not found");
   const product = await prisma.product.update({ where: { id }, data });
+  await audit(prisma, {
+    userId: req.user!.id,
+    action: "product.update",
+    entityType: "product",
+    entityId: id,
+    summary: `Changed reordering rule for ${product.sku} ${product.name}`,
+    changes: diff(before, product, ["minQty", "maxQty"]),
+  });
   broadcast("products");
   res.json({ product });
 });

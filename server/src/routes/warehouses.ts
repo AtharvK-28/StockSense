@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../db";
 import { requireRole } from "../lib/auth";
 import { broadcast } from "../lib/events";
+import { audit, diff } from "../services/audit";
 import { ZERO } from "../services/stock";
 
 export const warehousesRouter = Router();
@@ -57,13 +58,23 @@ warehousesRouter.post("/", requireRole("manager"), async (req, res) => {
   const data = warehouseSchema.parse(req.body);
   // Every warehouse starts with a default "Stock" location so it's usable immediately.
   const warehouse = await prisma.warehouse.create({ data: { ...data, locations: { create: [{ name: "Stock" }] } } });
+  await audit(prisma, { userId: req.user!.id, action: "warehouse.create", entityType: "warehouse", entityId: warehouse.id, summary: `Created warehouse ${warehouse.code} ${warehouse.name}` });
   broadcast("settings");
   res.status(201).json({ warehouse });
 });
 
 warehousesRouter.put("/:id", requireRole("manager"), async (req, res) => {
   const id = uuid.parse(req.params.id);
+  const before = await prisma.warehouse.findUnique({ where: { id } });
   const warehouse = await prisma.warehouse.update({ where: { id }, data: warehouseSchema.parse(req.body) });
+  await audit(prisma, {
+    userId: req.user!.id,
+    action: "warehouse.update",
+    entityType: "warehouse",
+    entityId: id,
+    summary: `Updated warehouse ${warehouse.code} ${warehouse.name}`,
+    changes: before ? diff(before, warehouse, ["name", "code", "address"]) : null,
+  });
   broadcast("settings");
   res.json({ warehouse });
 });
@@ -71,6 +82,7 @@ warehousesRouter.put("/:id", requireRole("manager"), async (req, res) => {
 warehousesRouter.post("/:id/locations", requireRole("manager"), async (req, res) => {
   const warehouseId = uuid.parse(req.params.id);
   const location = await prisma.location.create({ data: { warehouseId, ...locationSchema.parse(req.body) } });
+  await audit(prisma, { userId: req.user!.id, action: "location.create", entityType: "location", entityId: location.id, summary: `Created location ${location.name}` });
   broadcast("settings");
   res.status(201).json({ location });
 });
@@ -85,6 +97,7 @@ locationsRouter.get("/", async (_req, res) => {
 
 locationsRouter.post("/", requireRole("manager"), async (req, res) => {
   const location = await prisma.location.create({ data: newLocationSchema.parse(req.body) });
+  await audit(prisma, { userId: req.user!.id, action: "location.create", entityType: "location", entityId: location.id, summary: `Created location ${location.name}` });
   broadcast("settings");
   res.status(201).json({ location });
 });
@@ -98,7 +111,16 @@ locationsRouter.get("/:id/stock", async (req, res) => {
 
 locationsRouter.put("/:id", requireRole("manager"), async (req, res) => {
   const id = uuid.parse(req.params.id);
+  const before = await prisma.location.findUnique({ where: { id } });
   const location = await prisma.location.update({ where: { id }, data: newLocationSchema.partial().parse(req.body) });
+  await audit(prisma, {
+    userId: req.user!.id,
+    action: "location.update",
+    entityType: "location",
+    entityId: id,
+    summary: `Updated location ${location.name}`,
+    changes: before ? diff(before, location, ["name", "code", "warehouseId"]) : null,
+  });
   broadcast("settings");
   res.json({ location });
 });

@@ -4,6 +4,7 @@ import { prisma } from "../db";
 import { managerOnly } from "../lib/auth";
 import { broadcast } from "../lib/events";
 import { conflict } from "../lib/http";
+import { audit } from "../services/audit";
 
 export const categoriesRouter = Router();
 
@@ -19,13 +20,22 @@ categoriesRouter.get("/", async (_req, res) => {
 
 categoriesRouter.post("/", managerOnly, async (req, res) => {
   const category = await prisma.category.create({ data: nameSchema.parse(req.body) });
+  await audit(prisma, { userId: req.user!.id, action: "category.create", entityType: "category", entityId: category.id, summary: `Created category ${category.name}` });
   broadcast("settings");
   res.status(201).json({ category });
 });
 
 categoriesRouter.put("/:id", managerOnly, async (req, res) => {
   const id = z.string().uuid().parse(req.params.id);
+  const before = await prisma.category.findUnique({ where: { id } });
   const category = await prisma.category.update({ where: { id }, data: nameSchema.parse(req.body) });
+  await audit(prisma, {
+    userId: req.user!.id,
+    action: "category.update",
+    entityType: "category",
+    entityId: id,
+    summary: `Renamed category ${before?.name} → ${category.name}`,
+  });
   broadcast("settings");
   res.json({ category });
 });
@@ -34,7 +44,8 @@ categoriesRouter.delete("/:id", managerOnly, async (req, res) => {
   const id = z.string().uuid().parse(req.params.id);
   const inUse = await prisma.product.count({ where: { categoryId: id } });
   if (inUse) throw conflict(`This category still has ${inUse} product${inUse === 1 ? "" : "s"} — move them first`);
-  await prisma.category.delete({ where: { id } });
+  const deleted = await prisma.category.delete({ where: { id } });
+  await audit(prisma, { userId: req.user!.id, action: "category.delete", entityType: "category", entityId: id, summary: `Deleted category ${deleted.name}` });
   broadcast("settings");
   res.json({ ok: true });
 });

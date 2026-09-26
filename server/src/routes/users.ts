@@ -4,6 +4,8 @@ import { prisma } from "../db";
 import { managerOnly, publicUser } from "../lib/auth";
 import { broadcast } from "../lib/events";
 import { conflict } from "../lib/http";
+import { audit } from "../services/audit";
+import { notify } from "../services/notify";
 
 /** Team management: managers see everyone and decide who is a manager. */
 export const usersRouter = Router();
@@ -29,6 +31,9 @@ usersRouter.put("/:id/role", async (req, res) => {
     }
     return tx.user.update({ where: { id }, data: { role } });
   });
+  const label = role === "manager" ? "Inventory manager" : "Warehouse staff";
+  await audit(prisma, { userId: req.user!.id, action: "user.role", entityType: "user", entityId: id, summary: `Set ${user.name} (@${user.loginId}) to ${label}` });
+  await notify({ userIds: [id], except: req.user!.id }, { kind: "role", title: `You're now ${label === "Inventory manager" ? "an" : "a"} ${label.toLowerCase()}`, body: `Changed by ${req.user!.name}. Log out and back in if menus look out of date.`, link: "/profile" });
   broadcast("settings");
   res.json({ user: publicUser(user) });
 });

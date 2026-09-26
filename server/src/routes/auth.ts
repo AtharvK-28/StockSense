@@ -7,12 +7,15 @@ import { env } from "../env";
 import { clearSession, publicUser, requireAuth, setSession } from "../lib/auth";
 import { HttpError, badRequest, unauthorized } from "../lib/http";
 import { sendOtpEmail } from "../lib/mailer";
+import { failureLimiter } from "../lib/rateLimit";
 
 export const authRouter = Router();
 
 const OTP_TTL_MS = 10 * 60 * 1000;
 const OTP_MAX_PER_HOUR = 5;
 const OTP_MAX_ATTEMPTS = 5;
+/** 5 wrong passwords per Login ID + IP locks further attempts for 15 minutes. */
+const loginFailures = failureLimiter({ max: 5, windowMs: 15 * 60 * 1000 });
 
 const email = z.string().trim().toLowerCase().email("Enter a valid email address");
 export const password = z
@@ -64,11 +67,18 @@ authRouter.post("/login", async (req, res) => {
   const body = z
     .object({ login: z.string().trim().toLowerCase().min(1, "Enter your Login ID"), password: z.string().min(1, "Enter your password") })
     .parse(req.body);
+  const key = `${req.ip}|${body.login}`;
+  const wait = loginFailures.retryAfter(key);
+  if (wait > 0) {
+    throw new HttpError(429, `Too many failed attempts. Try again in ${Math.ceil(wait / 60_000)} minute${wait > 60_000 ? "s" : ""}, or reset your password.`);
+  }
   // Log in with the Login ID (or, as a convenience, the account email).
   const user = await prisma.user.findFirst({ where: { OR: [{ loginId: body.login }, { email: body.login }] } });
   if (!user || !(await bcrypt.compare(body.password, user.passwordHash))) {
+    loginFailures.fail(key);
     throw unauthorized("Invalid Login Id or Password");
   }
+  loginFailures.reset(key);
   setSession(res, user.id);
   res.json({ user: publicUser(user) });
 });

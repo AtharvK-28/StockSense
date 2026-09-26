@@ -2,7 +2,9 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
 import { broadcast } from "../lib/events";
+import { audit } from "../services/audit";
 import { applyDocument, createDocument } from "../services/documents";
+import { notify } from "../services/notify";
 
 export const stockRouter = Router();
 
@@ -37,6 +39,25 @@ stockRouter.post("/adjust", async (req, res) => {
     else await tx.document.update({ where: { id: doc.id }, data: { status: "ready" } });
     return doc;
   });
+  const product = await prisma.product.findUnique({ where: { id: body.productId }, select: { name: true, uom: true } });
+  await audit(prisma, {
+    userId,
+    action: applied ? "stock.update" : "stock.count",
+    entityType: "document",
+    entityId: document.id,
+    summary: `${applied ? "Set" : "Submitted count for"} ${product?.name} to ${body.quantity} ${product?.uom} (${document.reference})`,
+  });
+  if (!applied) {
+    await notify(
+      { role: "manager" },
+      {
+        kind: "approval",
+        title: `${req.user!.name} submitted count ${document.reference}`,
+        body: `${product?.name}: ${body.quantity} ${product?.uom}. Review and approve it to update stock.`,
+        link: `/operations/adjustments/${document.id}`,
+      },
+    );
+  }
   broadcast(applied ? "stock" : "documents");
   res.status(201).json({ document, applied });
 });

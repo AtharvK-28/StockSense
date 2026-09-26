@@ -11,7 +11,7 @@ export async function resetDatabase() {
 
 export async function fixture() {
   const user = await prisma.user.create({
-    data: { name: "Rakesh", email: "rakesh@test.dev", passwordHash: "x", role: "manager" },
+    data: { loginId: "rakesh01", name: "Rakesh", email: "rakesh@test.dev", passwordHash: "x", role: "manager" },
   });
   const warehouse = await prisma.warehouse.create({ data: { name: "Main Warehouse", code: "WH" } });
   const [store, rack] = await Promise.all([

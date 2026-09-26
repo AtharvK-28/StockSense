@@ -17,13 +17,21 @@ const OTP_MAX_ATTEMPTS = 5;
 const email = z.string().trim().toLowerCase().email("Enter a valid email address");
 export const password = z
   .string()
-  .min(8, "Password must be at least 8 characters")
+  .min(9, "Password must be more than 8 characters")
   .max(128)
-  .regex(/[A-Za-z]/, "Password must contain a letter")
-  .regex(/\d/, "Password must contain a number");
+  .regex(/[a-z]/, "Password must contain a lowercase letter")
+  .regex(/[A-Z]/, "Password must contain an uppercase letter")
+  .regex(/[^A-Za-z0-9]/, "Password must contain a special character");
+
+export const loginId = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z0-9._]{6,12}$/, "Login ID must be 6–12 characters: letters, numbers, . or _");
 
 const signupSchema = z.object({
-  name: z.string().trim().min(2, "Enter your name").max(80),
+  loginId,
+  name: z.string().trim().max(80).optional(),
   email,
   password,
   role: z.enum(["manager", "staff"]).default("manager"),
@@ -31,20 +39,33 @@ const signupSchema = z.object({
 
 authRouter.post("/signup", async (req, res) => {
   const body = signupSchema.parse(req.body);
-  const existing = await prisma.user.findUnique({ where: { email: body.email } });
-  if (existing) throw new HttpError(409, "An account with this email already exists");
+  if (await prisma.user.findUnique({ where: { loginId: body.loginId } })) {
+    throw new HttpError(409, "That Login ID is already taken");
+  }
+  if (await prisma.user.findUnique({ where: { email: body.email } })) {
+    throw new HttpError(409, "An account with this email already exists");
+  }
   const user = await prisma.user.create({
-    data: { name: body.name, email: body.email, role: body.role, passwordHash: await bcrypt.hash(body.password, 12) },
+    data: {
+      loginId: body.loginId,
+      name: body.name || body.loginId,
+      email: body.email,
+      role: body.role,
+      passwordHash: await bcrypt.hash(body.password, 12),
+    },
   });
   setSession(res, user.id);
   res.status(201).json({ user: publicUser(user) });
 });
 
 authRouter.post("/login", async (req, res) => {
-  const body = z.object({ email, password: z.string().min(1, "Enter your password") }).parse(req.body);
-  const user = await prisma.user.findUnique({ where: { email: body.email } });
+  const body = z
+    .object({ login: z.string().trim().toLowerCase().min(1, "Enter your Login ID"), password: z.string().min(1, "Enter your password") })
+    .parse(req.body);
+  // Log in with the Login ID (or, as a convenience, the account email).
+  const user = await prisma.user.findFirst({ where: { OR: [{ loginId: body.login }, { email: body.login }] } });
   if (!user || !(await bcrypt.compare(body.password, user.passwordHash))) {
-    throw unauthorized("Incorrect email or password");
+    throw unauthorized("Invalid Login Id or Password");
   }
   setSession(res, user.id);
   res.json({ user: publicUser(user) });

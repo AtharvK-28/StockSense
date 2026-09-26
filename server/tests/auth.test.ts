@@ -30,26 +30,38 @@ async function post(path: string, body: unknown, cookie?: string) {
 
 describe("auth", () => {
   it("signs up, protects routes, and logs in", async () => {
-    const signup = await post("/auth/signup", { name: "Meena", email: "Meena@Test.dev", password: "secret123" });
+    const signup = await post("/auth/signup", { loginId: "Meena01", email: "Meena@Test.dev", password: "Secret@123" });
     expect(signup.status).toBe(201);
     expect(signup.body.user.email).toBe("meena@test.dev");
+    expect(signup.body.user.loginId).toBe("meena01");
     expect(signup.cookie).toMatch(/^ss_session=/);
 
     expect((await fetch(`${base}/dashboard`)).status).toBe(401);
     expect((await fetch(`${base}/dashboard`, { headers: { Cookie: signup.cookie! } })).status).toBe(200);
 
-    expect((await post("/auth/login", { email: "meena@test.dev", password: "wrong-pass1" })).status).toBe(401);
-    expect((await post("/auth/login", { email: "meena@test.dev", password: "secret123" })).status).toBe(200);
+    const wrong = await post("/auth/login", { login: "meena01", password: "Wrong@1234" });
+    expect(wrong.status).toBe(401);
+    expect(wrong.body.error).toBe("Invalid Login Id or Password");
+    expect((await post("/auth/login", { login: "meena01", password: "Secret@123" })).status).toBe(200);
+    expect((await post("/auth/login", { login: "meena@test.dev", password: "Secret@123" })).status).toBe(200);
   });
 
-  it("rejects weak passwords and duplicate emails", async () => {
-    expect((await post("/auth/signup", { name: "A B", email: "a@test.dev", password: "short" })).status).toBe(400);
-    await post("/auth/signup", { name: "A B", email: "a@test.dev", password: "secret123" });
-    expect((await post("/auth/signup", { name: "A B", email: "a@test.dev", password: "secret123" })).status).toBe(409);
+  it("enforces Login ID and password rules and uniqueness", async () => {
+    const weak = ["secret123", "Secret123", "secret@123", "Sec@1234"]; // no upper / no special / no upper / too short
+    for (const password of weak) {
+      expect((await post("/auth/signup", { loginId: "userone", email: "a@test.dev", password })).status).toBe(400);
+    }
+    expect((await post("/auth/signup", { loginId: "short", email: "a@test.dev", password: "Secret@123" })).status).toBe(400);
+    expect((await post("/auth/signup", { loginId: "waytoolonglogin", email: "a@test.dev", password: "Secret@123" })).status).toBe(400);
+    expect((await post("/auth/signup", { loginId: "userone", email: "a@test.dev", password: "Secret@123" })).status).toBe(201);
+    const dupLogin = await post("/auth/signup", { loginId: "UserOne", email: "b@test.dev", password: "Secret@123" });
+    expect(dupLogin.status).toBe(409);
+    expect(dupLogin.body.error).toMatch(/Login ID/);
+    expect((await post("/auth/signup", { loginId: "usertwo", email: "a@test.dev", password: "Secret@123" })).status).toBe(409);
   });
 
   it("resets a password with a single-use OTP", async () => {
-    await post("/auth/signup", { name: "Rakesh", email: "rakesh@test.dev", password: "secret123" });
+    await post("/auth/signup", { loginId: "rakesh01", email: "rakesh@test.dev", password: "Secret@123" });
 
     const unknown = await post("/auth/forgot-password", { email: "nobody@test.dev" });
     expect(unknown.status).toBe(200);
@@ -60,12 +72,12 @@ describe("auth", () => {
     expect(code).toMatch(/^\d{6}$/);
 
     const wrong = code === "000000" ? "111111" : "000000";
-    expect((await post("/auth/reset-password", { email: "rakesh@test.dev", code: wrong, password: "newpass123" })).status).toBe(400);
-    expect((await post("/auth/reset-password", { email: "rakesh@test.dev", code, password: "newpass123" })).status).toBe(200);
+    expect((await post("/auth/reset-password", { email: "rakesh@test.dev", code: wrong, password: "NewPass@123" })).status).toBe(400);
+    expect((await post("/auth/reset-password", { email: "rakesh@test.dev", code, password: "NewPass@123" })).status).toBe(200);
     // Single use.
-    expect((await post("/auth/reset-password", { email: "rakesh@test.dev", code, password: "another123" })).status).toBe(400);
+    expect((await post("/auth/reset-password", { email: "rakesh@test.dev", code, password: "Another@123" })).status).toBe(400);
 
-    expect((await post("/auth/login", { email: "rakesh@test.dev", password: "newpass123" })).status).toBe(200);
+    expect((await post("/auth/login", { login: "rakesh01", password: "NewPass@123" })).status).toBe(200);
     const stored = await prisma.otpCode.findFirstOrThrow();
     expect(stored.codeHash).not.toBe(code);
   });

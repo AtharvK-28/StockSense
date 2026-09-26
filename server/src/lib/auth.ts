@@ -54,5 +54,5 @@ export const requireRole =
   };
 
 export function publicUser(user: User) {
-  return { id: user.id, name: user.name, email: user.email, role: user.role, createdAt: user.createdAt };
+  return { id: user.id, loginId: user.loginId, name: user.name, email: user.email, role: user.role, createdAt: user.createdAt };
 }

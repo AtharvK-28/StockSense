@@ -13,7 +13,9 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma migrate reset --force --skip-seed",
     "db:studio": "prisma studio",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:clear": "tsx prisma/clear.ts",
+    "db:seed:empty": "tsx prisma/seed.ts --empty"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

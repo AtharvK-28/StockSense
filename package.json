@@ -1,7 +1,7 @@
 {
   "name": "stocksense",
   "private": true,
-  "description": "StockSense — modular, ledger-first inventory management system",
+  "description": "StockSense \u2014 modular, ledger-first inventory management system",
   "workspaces": [
     "server",
     "client"
@@ -12,9 +12,12 @@
     "start": "npm run start -w server",
     "setup": "npm run db:migrate -w server && npm run db:seed -w server",
     "test": "npm test -w server",
-    "typecheck": "npm run typecheck -w server && npm run typecheck -w client"
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w client",
+    "e2e": "playwright test",
+    "e2e:report": "playwright show-report"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "concurrently": "^9.2.1"
   }
 }

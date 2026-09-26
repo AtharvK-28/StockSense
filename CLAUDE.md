@@ -20,12 +20,17 @@ npm workspaces monorepo:
 
 Key files:
 
-- `server/src/services/documents.ts` — **Stock Ledger Engine** (`applyDocument`, `validateDocument`), document lifecycle (`confirmDocument`, pick/pack, `refreshAvailability`, references like `WH/IN/0001`).
+- `server/src/services/documents.ts` — **Stock Ledger Engine** (`applyDocument`, `validateDocument` with done quantities + backorders), document lifecycle (`confirmDocument`, pick/pack, `refreshAvailability`, references like `WH/IN/0001`), `createReturn`, post-validation hooks (`afterValidation`: approval notices, low-stock crossings, `autoReorder`).
+- `server/src/services/{audit,notify,settings}.ts` — audit log writer (`audit`, `diff`), in-app notifications (`notify` by role/users, skips the actor), company settings (`autoReorder`).
+- `server/src/routes/analytics.ts` — analytics reconstructed by replaying the ledger backwards from current stock; `/valuation` report.
 - `server/src/services/stock.ts` — on-hand, reserved (free-to-use), stock status, reorder suggestion.
 - `server/src/routes/*` — REST API under `/api` (auth, dashboard, products, categories, documents, ledger, warehouses/locations, stock, search, profile, users).
 - `server/prisma/schema.prisma` + `migrations/` (incl. hand-written trigger migration) + `seed.ts`.
 - `client/src/pages/*` — Dashboard, products (list/detail/stock/categories/reordering), operations (DocumentList, DocumentPage), MoveHistory, settings (Warehouses, Locations, Team), Profile, auth.
 - `client/src/components/ui.tsx` — design-system primitives (Button, Field, Chip, SelectPill, CategoryBar, Modal, StatusBadge…). Reuse these.
+- `client/src/components/charts.tsx` — hand-rolled SVG charts (AreaChart, MirrorColumns, HBars, ChartTable) following the dataviz method; series colours are `--color-series-1/2` (validated blue/orange, with dark steps).
+- `client/src/lib/code128.ts` + `components/Barcode.tsx` — Code 128B encoder (verified against JsBarcode) and SVG renderer; `components/Scanner.tsx` — scan dialog (keyboard-wedge scanners + camera via `BarcodeDetector`; camera repeats de-duplicated, hand scans are not).
+- `client/src/lib/theme.ts` + inline script in `client/index.html` — light/dark/system theme (`data-theme`, `data-os-dark` on the html element); dark tokens in `index.css` (screen only, so print stays light). `--color-white` is the surface token; brand/toast text uses `text-on-brand`.
 
 ## Core invariants (don't break)
 
@@ -45,13 +50,17 @@ Key files:
 - **Roles:** staff = run operations (create/confirm/pick/pack/validate receipts, deliveries, transfers) and *submit* counts (adjustments go to Ready = "Awaiting approval"). Manager = approve/apply adjustments, cancel documents, products/categories/costs/reordering rules/reorder, warehouses/locations, Team page. First signup becomes manager; later signups are staff; last manager can't be demoted.
 - Auth: Login ID (6–12 chars, `[a-z0-9._]`, stored lowercase) or email + password (>8 chars, upper, lower, special). Error text exactly "Invalid Login Id or Password". OTP reset: 6-digit, bcrypt-hashed, single-use, 10 min, 5/hour, 5 attempts. `OTP_DEV_ECHO=true` returns the code to the UI for demos.
 - Live updates: Server-Sent Events at `/api/events`; client invalidates React Query caches on `change`.
+- Processing: Ready receipts/deliveries/transfers accept a done quantity per line; validating with less than demand asks whether to create a backorder (new doc, status Ready, `backorderOfId`). Validated receipts/deliveries/transfers can be returned (`returnOfId`; only un-returned quantities proposed).
+- Auto-reorder: on a validation that makes total stock cross a product's `minQty`, managers get a notification and (if the setting is on and no receipt for it is open) a draft receipt up to `maxQty` is created, owned by the first manager.
+- Login lockout: 5 failures per Login ID + IP → 15 min (in-memory, single process).
 
 ## Running
 
 - Local PostgreSQL 18 (Windows service) at 127.0.0.1:5432; `pg_hba` trusts 127.0.0.1, user `postgres`, no password. psql: `"/c/Program Files/PostgreSQL/18/bin/psql.exe"`. DBs: `stocksense` (dev), `stocksense_test` (tests).
 - `npm run dev` (root) → API :4000 + web :5173 (Vite proxies `/api`). `npm run build && npm start` → single process on :4000.
-- `npm test` (vitest, real Postgres test DB), `npm run typecheck`.
-- Reset demo data: `psql … -d stocksense -c "TRUNCATE stock_ledger_entries, document_lines, documents, stock_levels, products, product_categories, locations, warehouses, otp_codes, users, sequences CASCADE"` then `cd server && npx tsx prisma/seed.ts`.
+- `npm test` (vitest, real Postgres test DB `stocksense_test`), `npm run e2e` (Playwright, production build on :4100 + DB `stocksense_e2e`, reseeded each run; installed Edge locally), `npm run typecheck`.
+- CI: `.github/workflows/ci.yml` (Postgres service, typecheck, vitest, Playwright Chromium). Docker: `docker compose up --build` → :4000 (`COOKIE_SECURE=false` for plain HTTP).
+- Reset demo data: `npm run db:clear -w server && npm run db:seed -w server` (45 days of history via the real engine, backdated with `validateDocument(..., { at, quiet: true })`). `db:seed:empty` for a zero-products demo.
 - Demo logins (password `Demo@1234`): `manager` (Rakesh, manager), `meena.staff` (Meena, staff). Seed includes one staff count awaiting approval.
 
 ## Gotchas
@@ -60,11 +69,14 @@ Key files:
 - Stop the dev server before `prisma generate` on Windows (it locks the query-engine DLL). Stopping the background task can leave orphan node processes on ports 4000/5173 — kill them.
 - Prisma Decimals are serialized as numbers by `jsonReplacer` in `server/src/lib/http.ts`.
 - Express 5 handles async errors; throw `HttpError`/`badRequest`/`forbidden` etc. from `lib/http.ts`.
-- UI verification has been done with `playwright-core` driving installed Microsoft Edge (`chromium.launch({ channel: "msedge" })`) from a scratch folder — not part of the repo.
-- The project is **not a git repository yet** — initialize before submitting.
+- Phone layouts render a card list (`sm:hidden`) *and* a table (`hidden sm:block`) — e2e selectors must target `:visible` inputs.
+- Grid children holding wide tables need `min-w-0` or the whole column (and page) overflows on phones; `e2e/mobile.spec.ts` checks for sideways scroll.
+- Charts: run the dataviz validator before changing chart colours; one axis only.
+- Git: repo is on GitHub (`AtharvK-28/StockSense`); the user commits — don't commit unless asked.
 
 ## Status (2026-09-26)
 
-Done: everything in the brief, all mockup pages, PRD FR-1…FR-37 (FR-24 decided as hard block), TRD with documented deviations, roles & approvals, location filters (dashboard + move history), print sheets, list/kanban views, CSV export of moves, 19 passing tests.
+Done: everything in the brief, all mockup pages, PRD FR-1…FR-37 (FR-24 decided as hard block), TRD with documented deviations, roles & approvals, location filters, print sheets, list/kanban views, CSV exports. Phase 2: backorders/partial processing, returns, barcode labels + scanning, analytics + valuation report, auto-reorder, notifications, audit log, phone floor mode, PWA, dark mode, login lockout, empty-start seed, e2e suite (13), CI workflow, Docker. 28 vitest + 13 Playwright tests passing.
 
-Not done (see suggestions discussed with the user): barcode/QR scanning, automatic reorder drafts, backorders/partial receipts, stock valuation export, analytics (fast movers, dead stock), notification center, dark mode/PWA, CI, deployment, git history.
+Not verified: the Docker image build (Docker Desktop wasn't running) and the CI workflow's first run on GitHub.
+Ideas not built: lots/serial numbers, unit-of-measure conversions, enforced stock reservations (free-to-use is informational), offline data sync.

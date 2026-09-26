@@ -46,6 +46,7 @@ Single-process mode: `npm run build && npm start` serves the app and API togethe
 - **Printable documents:** receipts and delivery orders print as a clean sheet with signature lines.
 - **Move history:** the full ledger with search, filters, date range and CSV export.
 - **Settings:** multiple warehouses (name, short code, address) and their locations (name, short code), each managed on its own page.
+- **Roles:** warehouse staff run operations (receive, pick, pack, transfer, validate) and submit stock counts; inventory managers approve counts, cancel operations, own the catalog, costs and reordering rules, configure warehouses and manage the team. Enforced on the server. The first account is the manager; later sign-ups join as staff until promoted on Settings → Team.
 - **Global search:** press <kbd>/</kbd> anywhere to find a SKU, product or document reference.
 
 ## How stock changes

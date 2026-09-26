@@ -10,9 +10,67 @@ interface DetectedBarcode {
 interface BarcodeDetectorLike {
   detect(source: CanvasImageSource): Promise<DetectedBarcode[]>;
 }
-type BarcodeDetectorCtor = new (opts?: { formats?: string[] }) => BarcodeDetectorLike;
+type BarcodeDetectorCtor = (new (opts?: { formats?: string[] }) => BarcodeDetectorLike) & { getSupportedFormats?: () => Promise<string[]> };
 const Detector = (globalThis as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector;
-export const cameraScanSupported = !!Detector && !!navigator.mediaDevices?.getUserMedia;
+/** Camera access needs a secure page (HTTPS or localhost). */
+export const cameraAvailable = !!navigator.mediaDevices?.getUserMedia;
+
+type Decoder = (video: HTMLVideoElement) => Promise<string | null>;
+const FORMATS = ["code_128", "ean_13", "ean_8", "upc_a", "code_39", "qr_code"];
+
+/**
+ * Picks a barcode reader: the built-in detector where the platform has one, otherwise the bundled
+ * ZXing decoder (Windows/Linux laptops, Firefox, Safari). ZXing is loaded only when the camera opens.
+ */
+async function createDecoder(): Promise<Decoder> {
+  if (Detector) {
+    try {
+      const supported = (await Detector.getSupportedFormats?.()) ?? FORMATS;
+      const formats = FORMATS.filter((f) => supported.includes(f));
+      if (formats.length) {
+        const detector = new Detector({ formats });
+        return async (video) => (await detector.detect(video))[0]?.rawValue ?? null;
+      }
+    } catch {
+      /* declared but unusable on this platform: fall through */
+    }
+  }
+  const [{ BrowserMultiFormatReader }, { BarcodeFormat, DecodeHintType }] = await Promise.all([import("@zxing/browser"), import("@zxing/library")]);
+  const hints = new Map<number, unknown>([
+    [DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.CODE_128, BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A, BarcodeFormat.CODE_39, BarcodeFormat.QR_CODE]],
+    [DecodeHintType.TRY_HARDER, true],
+  ]);
+  const reader = new BrowserMultiFormatReader(hints);
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+  return async (video) => {
+    if (!video.videoWidth) return null;
+    // Decode a downscaled frame: plenty of pixels for a label held up to the camera, and fast.
+    const scale = Math.min(1, 960 / video.videoWidth);
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    try {
+      return reader.decodeFromCanvas(canvas).getText();
+    } catch {
+      return null; // nothing readable in this frame
+    }
+  };
+}
+
+function cameraErrorMessage(err: unknown) {
+  switch ((err as Error).name) {
+    case "NotAllowedError":
+      return "Camera access was blocked. Allow it from the camera icon in the address bar, then try again.";
+    case "NotFoundError":
+    case "OverconstrainedError":
+      return "No camera was found on this device.";
+    case "NotReadableError":
+      return "The camera is in use by another app. Close it and try again.";
+    default:
+      return "Couldn't start the camera.";
+  }
+}
 
 export interface ScanResult {
   ok: boolean;
@@ -58,6 +116,8 @@ export function ScanDialog({
   const [log, setLog] = useState<(ScanResult & { code: string; at: number })[]>([]);
   const [camera, setCamera] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [cameraState, setCameraState] = useState<"starting" | "scanning">("starting");
+  const [mirrored, setMirrored] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const lastRef = useRef<{ code: string; at: number } | null>(null);
@@ -81,6 +141,10 @@ export function ScanDialog({
     [onScan, continuous, onClose],
   );
 
+  // The camera loop reads the latest handler through a ref, so parent re-renders don't restart the camera.
+  const submitRef = useRef(submit);
+  submitRef.current = submit;
+
   useEffect(() => {
     if (!open) {
       setCamera(false);
@@ -90,39 +154,49 @@ export function ScanDialog({
   }, [open]);
 
   useEffect(() => {
-    if (!open || !camera || !Detector) return;
+    if (!open || !camera) return;
     let stream: MediaStream | null = null;
-    let raf = 0;
+    let timer = 0;
     let stopped = false;
-    const detector = new Detector({ formats: ["code_128", "qr_code", "ean_13", "ean_8", "code_39", "upc_a"] });
+    setCameraError(null);
+    setCameraState("starting");
     (async () => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        if (stopped || !videoRef.current) return;
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+        // This is what makes the browser ask for camera permission.
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        });
+        const decode = await createDecoder();
+        const video = videoRef.current;
+        if (stopped || !video) return;
+        // Laptop webcams face the user: mirror the preview so aiming feels natural (frames are decoded unmirrored).
+        setMirrored(stream.getVideoTracks()[0]?.getSettings().facingMode !== "environment");
+        video.srcObject = stream;
+        await video.play();
+        setCameraState("scanning");
         const tick = async () => {
-          if (stopped || !videoRef.current) return;
+          if (stopped) return;
           try {
-            const found = await detector.detect(videoRef.current);
-            if (found[0]) await submit(found[0].rawValue, true);
+            const code = await decode(video);
+            if (code) await submitRef.current(code, true);
           } catch {
             /* frame not ready */
           }
-          raf = requestAnimationFrame(tick);
+          timer = window.setTimeout(tick, 120);
         };
-        raf = requestAnimationFrame(tick);
+        tick();
       } catch (err) {
-        setCameraError((err as Error).name === "NotAllowedError" ? "Camera permission was denied." : "Couldn't start the camera.");
+        if (stopped) return;
+        setCameraError(cameraErrorMessage(err));
         setCamera(false);
       }
     })();
     return () => {
       stopped = true;
-      cancelAnimationFrame(raf);
+      clearTimeout(timer);
       stream?.getTracks().forEach((t) => t.stop());
     };
-  }, [open, camera, submit]);
+  }, [open, camera]);
 
   return (
     <Modal open={open} onClose={onClose} title={title}>
@@ -150,22 +224,29 @@ export function ScanDialog({
       </form>
       <p className="mt-2 text-[13px] text-muted">{hint ?? "USB and Bluetooth scanners work out of the box — they type the code and press Enter."}</p>
 
-      {cameraScanSupported ? (
+      {cameraAvailable ? (
         <div className="mt-4">
           {camera && (
             <div className="relative mb-3 overflow-hidden rounded-xl bg-black">
-              <video ref={videoRef} muted playsInline className="aspect-video w-full object-cover" />
+              <video ref={videoRef} muted playsInline className={clsx("aspect-video w-full object-cover", mirrored && "-scale-x-100")} />
               <div className="pointer-events-none absolute inset-x-8 top-1/2 h-0.5 -translate-y-1/2 bg-brand/80 shadow-[0_0_12px_2px_rgba(255,56,92,.6)]" />
+              <p className="absolute inset-x-0 bottom-0 bg-black/55 px-4 py-2 text-center text-xs text-white">
+                {cameraState === "starting" ? "Starting camera…" : "Hold the barcode flat, filling about half the frame"}
+              </p>
             </div>
           )}
           <Button variant="subtle" icon={camera ? CameraOff : Camera} onClick={() => setCamera((c) => !c)}>
             {camera ? "Stop camera" : "Use camera"}
           </Button>
-          {cameraError && <p className="mt-2 text-sm text-bad">{cameraError}</p>}
+          {cameraError && (
+            <p role="alert" className="mt-2 text-sm text-bad">
+              {cameraError}
+            </p>
+          )}
         </div>
       ) : (
         <p className="mt-4 rounded-xl bg-canvas px-4 py-3 text-[13px] text-muted">
-          Camera scanning needs Chrome or Edge on Android, ChromeOS or macOS. On this device, use a scanner or type the code.
+          The camera needs a secure connection (HTTPS or localhost). On this connection, use a scanner or type the code.
         </p>
       )}
 

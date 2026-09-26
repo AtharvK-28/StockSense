@@ -4,6 +4,7 @@ import {
   Boxes,
   ChartColumn,
   ChevronUp,
+  Download,
   History,
   LayoutGrid,
   LogOut,
@@ -32,10 +33,11 @@ import { api, qs } from "../lib/api";
 import { useAuth, useIsManager } from "../lib/auth";
 import { DOC_TYPE_LIST, docPath, fmtQty } from "../lib/format";
 import { useLiveUpdates } from "../lib/live";
-import { type ThemePref, useTheme } from "../lib/theme";
+import { type ThemePref, useResolvedTheme, useTheme } from "../lib/theme";
 import { useDebounced } from "../lib/queries";
 import type { SearchResults } from "../lib/types";
 import { NotificationBell } from "./Notifications";
+import { ProductImage } from "./ProductImage";
 import { ScanDialog, type ScanResult } from "./Scanner";
 import { Avatar, StatusBadge } from "./ui";
 
@@ -101,19 +103,47 @@ const NAV: { heading?: string; items: NavItem[] }[] = [
       { to: "/settings/locations", label: "Locations", icon: MapPin },
       { to: "/settings/team", label: "Team", icon: Users, managerOnly: true },
       { to: "/settings/general", label: "General", icon: Settings2 },
+      { to: "/settings/export", label: "Data export", icon: Download },
       { to: "/settings/audit", label: "Audit log", icon: ScrollText, managerOnly: true },
     ],
   },
 ];
 
+/** Which edges of a scroll area have content hidden past them (drives the fade hints). */
+function useScrollEdges<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  const [edges, setEdges] = useState({ top: false, bottom: false });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => setEdges({ top: el.scrollTop > 2, bottom: el.scrollTop + el.clientHeight < el.scrollHeight - 2 });
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => {
+      el.removeEventListener("scroll", update);
+      observer.disconnect();
+    };
+  }, []);
+  return [ref, edges] as const;
+}
+
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const isManager = useIsManager();
+  const [navRef, edges] = useScrollEdges<HTMLElement>();
   return (
     <div className="flex h-full flex-col">
       <Link to="/" onClick={onNavigate} className="flex h-20 shrink-0 items-center px-6">
         <Logo />
       </Link>
-      <nav className="flex-1 space-y-6 overflow-y-auto px-3 pt-2 pb-6">
+      <nav
+        ref={navRef}
+        className={clsx(
+          "scrollbar-none flex-1 space-y-6 overflow-y-auto overscroll-contain px-3 pt-2 pb-6",
+          edges.top && edges.bottom ? "scroll-fade-both" : edges.bottom ? "scroll-fade-bottom" : edges.top && "scroll-fade-top",
+        )}
+      >
         {NAV.map((group, i) => (
           <div key={group.heading ?? i}>
             {group.heading && (
@@ -184,6 +214,8 @@ function ProfileMenu({ onNavigate }: { onNavigate?: () => void }) {
             <UserRound className="size-4" /> My profile
           </Link>
           <div className="my-1 h-px bg-hairline" />
+          <ThemeSwitch />
+          <div className="my-1 h-px bg-hairline" />
           <button
             type="button"
             onClick={async () => {
@@ -242,6 +274,25 @@ export function ThemeSwitch() {
         ))}
       </div>
     </div>
+  );
+}
+
+/** One-click light/dark switch in the header. "System" stays available in the account menu. */
+function ThemeToggle() {
+  const [, setPref] = useTheme();
+  const resolved = useResolvedTheme();
+  const next = resolved === "dark" ? "light" : "dark";
+  const Icon = resolved === "dark" ? Sun : Moon;
+  return (
+    <button
+      type="button"
+      onClick={() => setPref(next)}
+      aria-label={`Switch to ${next} mode`}
+      title={`Switch to ${next} mode`}
+      className="hidden size-11 shrink-0 place-items-center rounded-full border border-line bg-white transition hover:shadow-card sm:grid"
+    >
+      <Icon className="size-[18px]" />
+    </button>
   );
 }
 
@@ -366,9 +417,7 @@ function GlobalSearch() {
             <SearchGroup title="Products">
               {data.products.map((p) => (
                 <button key={p.id} type="button" onClick={() => go(`/products/${p.id}`)} className="flex w-full items-center gap-3 px-6 py-2.5 text-left hover:bg-canvas">
-                  <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-canvas">
-                    <Package className="size-4" />
-                  </span>
+                  <ProductImage product={p} className="size-10 rounded-lg" iconClassName="size-4" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold">{p.name}</span>
                     <span className="block truncate text-xs text-muted">
@@ -527,6 +576,7 @@ export function Layout() {
             {live ? "Live" : "Offline"}
           </span>
           <GlobalScan />
+          <ThemeToggle />
           <CreateMenu />
           <NotificationBell />
           <HeaderProfile />

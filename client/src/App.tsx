@@ -22,6 +22,7 @@ import { Stock } from "./pages/products/Stock";
 import { Locations } from "./pages/settings/Locations";
 import { Team } from "./pages/settings/Team";
 import { General } from "./pages/settings/General";
+import { DataExport } from "./pages/settings/DataExport";
 import { AuditLog } from "./pages/settings/AuditLog";
 import { Warehouses } from "./pages/settings/Warehouses";
 
@@ -100,6 +101,7 @@ export function App() {
           <Route path="settings/locations" element={<Locations />} />
           <Route path="settings/team" element={<Team />} />
           <Route path="settings/general" element={<General />} />
+          <Route path="settings/export" element={<DataExport />} />
           <Route path="settings/audit" element={<AuditLog />} />
           <Route path="profile" element={<Profile />} />
           <Route path="*" element={<NotFound />} />

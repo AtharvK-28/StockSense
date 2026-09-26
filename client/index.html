@@ -4,7 +4,22 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#ffffff" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#161616" media="(prefers-color-scheme: dark)" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <script>
+      // Apply the saved theme before first paint so there's no flash of the wrong theme.
+      (function () {
+        var root = document.documentElement;
+        try {
+          var pref = localStorage.getItem("ss:theme");
+          if (pref === "light" || pref === "dark") root.dataset.theme = pref;
+        } catch (e) {}
+        if (window.matchMedia("(prefers-color-scheme: dark)").matches) root.setAttribute("data-os-dark", "");
+      })();
+    </script>
     <meta name="description" content="StockSense — real-time, ledger-first inventory management." />
     <title>StockSense</title>
   </head>

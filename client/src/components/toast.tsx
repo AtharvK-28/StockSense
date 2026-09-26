@@ -32,18 +32,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         {toasts.map((t) => (
           <div
             key={t.id}
-            className="animate-rise-in pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-xl bg-ink px-4 py-3.5 text-white shadow-lift"
+            className="animate-rise-in pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-xl bg-toast px-4 py-3.5 text-on-brand shadow-lift"
           >
             {t.tone === "error" ? (
               <CircleAlert className="mt-0.5 size-5 shrink-0 text-brand" />
             ) : (
-              <CircleCheck className={clsx("mt-0.5 size-5 shrink-0", t.tone === "success" ? "text-[#4ade80]" : "text-white")} />
+              <CircleCheck className={clsx("mt-0.5 size-5 shrink-0", t.tone === "success" ? "text-[#4ade80]" : "text-on-brand")} />
             )}
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold">{t.title}</p>
-              {t.description && <p className="mt-0.5 text-sm text-white/70">{t.description}</p>}
+              {t.description && <p className="mt-0.5 text-sm text-on-brand/70">{t.description}</p>}
             </div>
-            <button type="button" aria-label="Dismiss" onClick={() => dismiss(t.id)} className="text-white/60 hover:text-white">
+            <button type="button" aria-label="Dismiss" onClick={() => dismiss(t.id)} className="text-on-brand/60 hover:text-on-brand">
               <X className="size-4" />
             </button>
           </div>

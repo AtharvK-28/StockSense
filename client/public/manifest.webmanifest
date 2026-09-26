@@ -1,0 +1,21 @@
+{
+  "name": "StockSense",
+  "short_name": "StockSense",
+  "description": "Real-time, ledger-first inventory management.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#ff385c",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "New receipt", "url": "/operations/receipts/new" },
+    { "name": "New delivery", "url": "/operations/deliveries/new" },
+    { "name": "Stock", "url": "/stock" }
+  ]
+}

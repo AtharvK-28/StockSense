@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { clsx } from "clsx";
 import {
   Boxes,
+  ChartColumn,
   ChevronUp,
   History,
   LayoutGrid,
@@ -9,11 +10,17 @@ import {
   type LucideIcon,
   MapPin,
   Menu,
+  Monitor,
+  Moon,
   Package,
   Plus,
   RefreshCcw,
+  ScanLine,
   Search,
+  Sun,
   Tags,
+  ScrollText,
+  Settings2,
   UserRound,
   Users,
   Warehouse,
@@ -25,8 +32,11 @@ import { api, qs } from "../lib/api";
 import { useAuth, useIsManager } from "../lib/auth";
 import { DOC_TYPE_LIST, docPath, fmtQty } from "../lib/format";
 import { useLiveUpdates } from "../lib/live";
+import { type ThemePref, useTheme } from "../lib/theme";
 import { useDebounced } from "../lib/queries";
 import type { SearchResults } from "../lib/types";
+import { NotificationBell } from "./Notifications";
+import { ScanDialog, type ScanResult } from "./Scanner";
 import { Avatar, StatusBadge } from "./ui";
 
 export function RolePill({ role }: { role: "manager" | "staff" }) {
@@ -64,7 +74,12 @@ interface NavItem {
 }
 
 const NAV: { heading?: string; items: NavItem[] }[] = [
-  { items: [{ to: "/", label: "Dashboard", icon: LayoutGrid, end: true }] },
+  {
+    items: [
+      { to: "/", label: "Dashboard", icon: LayoutGrid, end: true },
+      { to: "/analytics", label: "Analytics", icon: ChartColumn },
+    ],
+  },
   {
     heading: "Operations",
     items: DOC_TYPE_LIST.map((m) => ({ to: `/operations/${m.slug}`, label: m.plural, icon: m.icon })),
@@ -85,6 +100,8 @@ const NAV: { heading?: string; items: NavItem[] }[] = [
       { to: "/settings/warehouses", label: "Warehouses", icon: Warehouse },
       { to: "/settings/locations", label: "Locations", icon: MapPin },
       { to: "/settings/team", label: "Team", icon: Users, managerOnly: true },
+      { to: "/settings/general", label: "General", icon: Settings2 },
+      { to: "/settings/audit", label: "Audit log", icon: ScrollText, managerOnly: true },
     ],
   },
 ];
@@ -196,6 +213,38 @@ function ProfileMenu({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
+/** Light / Dark / System choice, remembered per browser. */
+export function ThemeSwitch() {
+  const [pref, setPref] = useTheme();
+  const options: { key: ThemePref; label: string; icon: LucideIcon }[] = [
+    { key: "light", label: "Light", icon: Sun },
+    { key: "dark", label: "Dark", icon: Moon },
+    { key: "system", label: "System", icon: Monitor },
+  ];
+  return (
+    <div className="px-4 py-2">
+      <p className="mb-1.5 text-xs font-semibold text-muted">Appearance</p>
+      <div className="flex rounded-full border border-line p-0.5" role="radiogroup" aria-label="Appearance">
+        {options.map((o) => (
+          <button
+            key={o.key}
+            type="button"
+            role="radio"
+            aria-checked={pref === o.key}
+            onClick={() => setPref(o.key)}
+            className={clsx(
+              "flex flex-1 items-center justify-center gap-1.5 rounded-full py-1.5 text-xs font-semibold transition",
+              pref === o.key ? "bg-ink text-white" : "text-muted hover:text-ink",
+            )}
+          >
+            <o.icon className="size-3.5" /> {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** Avatar menu in the top-right corner (mirrors the sidebar profile menu). */
 function HeaderProfile() {
   const { user, logout } = useAuth();
@@ -222,6 +271,8 @@ function HeaderProfile() {
             <p className="truncate text-sm font-semibold">{user.name}</p>
             <p className="truncate text-xs text-muted">@{user.loginId} · {user.role === "manager" ? "Inventory manager" : "Warehouse staff"}</p>
           </div>
+          <div className="my-1 h-px bg-hairline" />
+          <ThemeSwitch />
           <div className="my-1 h-px bg-hairline" />
           <Link to="/profile" onClick={() => setOpen(false)} className="flex items-center gap-3 px-4 py-2.5 text-[15px] hover:bg-canvas">
             <UserRound className="size-4" /> My profile
@@ -287,7 +338,7 @@ function GlobalSearch() {
           e.preventDefault();
           if (q.trim()) go(`/products?q=${encodeURIComponent(q.trim())}`);
         }}
-        className="flex h-12 items-center rounded-full border border-line bg-white pr-2 pl-6 shadow-card transition focus-within:shadow-pop hover:shadow-pop"
+        className="flex h-12 items-center rounded-full border border-line bg-white pr-2 pl-4 shadow-card sm:pl-6 transition focus-within:shadow-pop hover:shadow-pop"
       >
         <input
           ref={input}
@@ -303,7 +354,7 @@ function GlobalSearch() {
           className="min-w-0 flex-1 bg-transparent text-sm font-medium outline-none placeholder:font-normal placeholder:text-muted"
         />
         <kbd className="mr-2 hidden rounded-md border border-line px-1.5 text-[11px] text-muted md:block">/</kbd>
-        <button type="submit" aria-label="Search" className="brand-gradient grid size-8 place-items-center rounded-full text-white">
+        <button type="submit" aria-label="Search" className="brand-gradient grid size-8 place-items-center rounded-full text-on-brand">
           <Search className="size-3.5" strokeWidth={3} />
         </button>
       </form>
@@ -360,13 +411,47 @@ function SearchGroup({ title, children }: { title: string; children: ReactNode }
   );
 }
 
+/** Header scan button: scan a product label or a printed document to open it. */
+function GlobalScan() {
+  const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
+  const onScan = async (code: string): Promise<ScanResult> => {
+    const res = await api<SearchResults>(`/search${qs({ q: code })}`);
+    const product = res.products.find((p) => p.sku.toLowerCase() === code.toLowerCase());
+    const document = res.documents.find((d) => d.reference.toLowerCase() === code.toLowerCase());
+    if (product) {
+      navigate(`/products/${product.id}`);
+      return { ok: true, message: `Opening ${product.name}` };
+    }
+    if (document) {
+      navigate(docPath(document));
+      return { ok: true, message: `Opening ${document.reference}` };
+    }
+    return { ok: false, message: "No product or document with that code" };
+  };
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label="Scan a barcode"
+        title="Scan a barcode"
+        className="grid size-10 shrink-0 place-items-center rounded-full border border-line bg-white transition hover:shadow-card sm:size-11"
+      >
+        <ScanLine className="size-[18px]" />
+      </button>
+      <ScanDialog open={open} onClose={() => setOpen(false)} onScan={onScan} continuous={false} title="Scan to open" hint="Scan a product label or the barcode on a printed receipt or delivery." />
+    </>
+  );
+}
+
 function CreateMenu() {
   const isManager = useIsManager();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useClickOutside(ref, () => setOpen(false));
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative hidden sm:block">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -424,7 +509,7 @@ export function Layout() {
       )}
 
       <header className="sticky top-0 z-20 border-b border-hairline bg-white/95 backdrop-blur print:hidden">
-        <div className="flex h-20 items-center gap-3 px-4 sm:px-6 lg:px-10">
+        <div className="flex h-20 items-center gap-2 px-4 sm:gap-3 sm:px-6 lg:px-10">
           <button type="button" aria-label="Open menu" onClick={() => setDrawer(true)} className="grid size-10 shrink-0 place-items-center rounded-full hover:bg-canvas lg:hidden">
             <Menu className="size-5" />
           </button>
@@ -441,7 +526,9 @@ export function Layout() {
             </span>
             {live ? "Live" : "Offline"}
           </span>
+          <GlobalScan />
           <CreateMenu />
+          <NotificationBell />
           <HeaderProfile />
         </div>
       </header>

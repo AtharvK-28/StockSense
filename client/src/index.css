@@ -28,9 +28,56 @@
   --color-bad: #c13515;
   --color-bad-50: #fdeeea;
 
+  /* Always-white text on coral / toast surfaces (doesn't flip in dark mode). */
+  --color-on-brand: #ffffff;
+  --color-toast: #222222;
+
+  /* Chart series (validated categorical slots 1–2; see docs on the dataviz method) */
+  --color-series-1: #2a78d6;
+  --color-series-2: #eb6834;
+
   --shadow-card: 0 1px 2px rgb(0 0 0 / 0.08), 0 4px 12px rgb(0 0 0 / 0.05);
   --shadow-pop: 0 6px 16px rgb(0 0 0 / 0.12);
   --shadow-lift: 0 6px 20px rgb(0 0 0 / 0.18);
+}
+
+/*
+ * Dark mode: the same roles re-stepped for a dark surface. `--color-white` is the surface token
+ * (Tailwind's bg-white reads it), so surfaces flip while bg-ink/text-white pairs stay inverse.
+ * Applied for OS dark mode unless the viewer chose light, or when they chose dark. Print stays light.
+ */
+@layer base {
+  @media screen {
+  :root[data-theme="dark"],
+  :root[data-os-dark]:not([data-theme="light"]) {
+    color-scheme: dark;
+    --color-white: #161616;
+    --color-black: #000000;
+    --color-ink: #f2f2f2;
+    --color-muted: #a8a8a8;
+    --color-subtle: #7c7c7c;
+    --color-line: #3a3a3a;
+    --color-hairline: #2a2a2a;
+    --color-canvas: #202020;
+    --color-brand-50: #3a1520;
+    --color-brand-100: #4d1b29;
+    --color-brand-700: #ff8fa6;
+    --color-ok: #45c25a;
+    --color-ok-50: #13301a;
+    --color-warn: #f0a93b;
+    --color-warn-50: #36270f;
+    --color-info: #7ea3ff;
+    --color-info-50: #172342;
+    --color-bad: #ff7a66;
+    --color-bad-50: #3b1812;
+    --color-toast: #2e2e2e;
+    --color-series-1: #3987e5;
+    --color-series-2: #d95926;
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.5), 0 4px 12px rgb(0 0 0 / 0.35);
+    --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.55);
+    --shadow-lift: 0 8px 28px rgb(0 0 0 / 0.6);
+  }
+  }
 }
 
 @layer base {
@@ -58,6 +105,7 @@
 
 @utility brand-gradient {
   background-image: linear-gradient(to right, #e61e4d 0%, #e31c5f 50%, #d70466 100%);
+  color: var(--color-on-brand);
 }
 
 @utility scrollbar-none {

@@ -30,7 +30,7 @@ export function categoryVisual(name: string | null | undefined) {
   // Known kinds get their own colour so common categories never clash; others fall back to a hash.
   const known = ICONS.findIndex(([re]) => re.test(key));
   const tile = TILES[(known >= 0 ? known : hash(key)) % TILES.length]!;
-  return { ...tile, icon: known >= 0 ? ICONS[known]![1] : Box };
+  return { fg: tile.fg, bg: `color-mix(in srgb, ${tile.fg} 13%, transparent)`, icon: known >= 0 ? ICONS[known]![1] : Box };
 }
 
 export const UOM_OPTIONS = ["Units", "kg", "g", "L", "m", "Box", "Pack", "Rolls", "Pairs"];

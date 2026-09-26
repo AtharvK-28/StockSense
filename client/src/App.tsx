@@ -4,6 +4,7 @@ import { Link, Navigate, Outlet, Route, Routes, useLocation } from "react-router
 import { Layout, Logo } from "./components/Layout";
 import { Button, EmptyState, Spinner } from "./components/ui";
 import { useAuth } from "./lib/auth";
+import { Analytics } from "./pages/Analytics";
 import { Dashboard } from "./pages/Dashboard";
 import { MoveHistory } from "./pages/MoveHistory";
 import { Profile } from "./pages/Profile";
@@ -13,12 +14,15 @@ import { Signup } from "./pages/auth/Signup";
 import { DocumentList } from "./pages/operations/DocumentList";
 import { DocumentPage } from "./pages/operations/DocumentPage";
 import { Categories } from "./pages/products/Categories";
+import { Labels } from "./pages/products/Labels";
 import { ProductList } from "./pages/products/ProductList";
 import { ProductPage } from "./pages/products/ProductPage";
 import { Reordering } from "./pages/products/Reordering";
 import { Stock } from "./pages/products/Stock";
 import { Locations } from "./pages/settings/Locations";
 import { Team } from "./pages/settings/Team";
+import { General } from "./pages/settings/General";
+import { AuditLog } from "./pages/settings/AuditLog";
 import { Warehouses } from "./pages/settings/Warehouses";
 
 function Splash() {
@@ -83,16 +87,20 @@ export function App() {
           <Route path="products" element={<ProductList />} />
           <Route path="products/new" element={<Keyed><ProductPage /></Keyed>} />
           <Route path="products/categories" element={<Categories />} />
+          <Route path="products/labels" element={<Labels />} />
           <Route path="products/reordering" element={<Reordering />} />
           <Route path="products/:id" element={<Keyed><ProductPage /></Keyed>} />
           <Route path="operations/:kind" element={<DocumentList />} />
           <Route path="operations/:kind/new" element={<Keyed><DocumentPage /></Keyed>} />
           <Route path="operations/:kind/:id" element={<Keyed><DocumentPage /></Keyed>} />
           <Route path="moves" element={<MoveHistory />} />
+          <Route path="analytics" element={<Analytics />} />
           <Route path="stock" element={<Stock />} />
           <Route path="settings/warehouses" element={<Warehouses />} />
           <Route path="settings/locations" element={<Locations />} />
           <Route path="settings/team" element={<Team />} />
+          <Route path="settings/general" element={<General />} />
+          <Route path="settings/audit" element={<AuditLog />} />
           <Route path="profile" element={<Profile />} />
           <Route path="*" element={<NotFound />} />
         </Route>

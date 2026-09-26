@@ -127,6 +127,7 @@ export interface DocumentLine {
   quantity: number;
   countedQuantity: number | null;
   recordedQuantity: number | null;
+  doneQuantity: number | null;
   notes: string | null;
   available: number | null;
   product: ProductSummary & { category: { id: string; name: string } | null };
@@ -137,6 +138,17 @@ export interface DocumentDetail extends DocumentBase {
   validatedBy: { id: string; name: string } | null;
   lines: DocumentLine[];
   moves: LedgerEntry[];
+  backorderOf: DocumentLink | null;
+  backorders: DocumentLink[];
+  returnOf: DocumentLink | null;
+  returns: DocumentLink[];
+}
+
+export interface DocumentLink {
+  id: string;
+  reference: string;
+  status: DocStatus;
+  type: DocType;
 }
 
 export interface Dashboard {

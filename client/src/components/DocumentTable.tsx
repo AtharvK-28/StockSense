@@ -24,7 +24,37 @@ export function docRoute(d: Pick<DocumentRow, "type" | "sourceLocation" | "desti
 export function DocumentTable({ docs, showType, compact }: { docs: DocumentRow[]; showType?: boolean; compact?: boolean }) {
   const navigate = useNavigate();
   return (
-    <div className="overflow-x-auto">
+    <>
+    <ul className="divide-y divide-hairline sm:hidden">
+      {docs.map((d) => {
+        const route = docRoute(d);
+        const late = isLate(d);
+        return (
+          <li key={d.id}>
+            <Link to={docPath(d)} className="block px-5 py-4 active:bg-canvas">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-semibold">{d.reference}</p>
+                  <p className="truncate text-sm text-muted">
+                    {d.type === "receipt" ? (d.partnerName ?? route.from) : route.from} → {d.type === "delivery" ? (d.partnerName ?? route.to) : route.to}
+                  </p>
+                </div>
+                <StatusBadge status={d.status} />
+              </div>
+              <p className="mt-2 truncate text-sm">
+                <ProductSummary doc={d} inline />
+              </p>
+              <p className={clsx("mt-1 text-xs", late ? "font-semibold text-bad" : "text-muted")}>
+                {late ? "Late · " : ""}
+                {fmtShortDate(d.scheduledDate)}
+                {d.type === "delivery" && d.status === "ready" && (d.packedAt || d.pickedAt) ? ` · ${d.packedAt ? "Packed" : "Picked"}` : ""}
+              </p>
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+    <div className="hidden overflow-x-auto sm:block">
       <table className={clsx("w-full text-left text-sm", compact ? "min-w-[600px]" : "min-w-[900px]")}>
         <thead>
           <tr className="border-b border-hairline text-xs text-muted">
@@ -104,6 +134,7 @@ export function DocumentTable({ docs, showType, compact }: { docs: DocumentRow[]
         </tbody>
       </table>
     </div>
+    </>
   );
 }
 

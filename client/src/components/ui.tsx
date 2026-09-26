@@ -18,8 +18,8 @@ type Variant = "primary" | "dark" | "outline" | "subtle" | "ghost" | "danger";
 type Size = "sm" | "md" | "lg";
 
 const buttonVariants: Record<Variant, string> = {
-  primary: "brand-gradient text-white shadow-sm hover:brightness-[.96]",
-  dark: "bg-ink text-white hover:bg-black",
+  primary: "brand-gradient text-on-brand shadow-sm hover:brightness-[.96]",
+  dark: "bg-ink text-white hover:opacity-90",
   outline: "border border-ink bg-white text-ink hover:bg-canvas",
   subtle: "border border-line bg-white text-ink hover:border-ink",
   ghost: "text-ink hover:bg-canvas",

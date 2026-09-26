@@ -7,6 +7,14 @@ import { ToastProvider } from "./components/toast";
 import "./index.css";
 import { ApiError } from "./lib/api";
 import { AuthProvider } from "./lib/auth";
+import { watchOsTheme } from "./lib/theme";
+
+watchOsTheme();
+
+// Installable app shell (production only — the Vite dev server serves modules directly).
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => undefined));
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {

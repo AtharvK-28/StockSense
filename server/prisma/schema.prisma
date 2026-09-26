@@ -42,6 +42,8 @@ enum MoveType {
 
 model User {
   id           String   @id @default(uuid()) @db.Uuid
+  /// Unique 6–12 character handle used to log in.
+  loginId      String   @unique @map("login_id")
   name         String
   email        String   @unique
   passwordHash String   @map("password_hash")
@@ -88,6 +90,8 @@ model Location {
   id          String   @id @default(uuid()) @db.Uuid
   warehouseId String   @map("warehouse_id") @db.Uuid
   name        String
+  /// Short code, e.g. "STK1", shown as WH/STK1.
+  code        String?
   createdAt   DateTime @default(now()) @map("created_at")
 
   warehouse   Warehouse    @relation(fields: [warehouseId], references: [id])
@@ -116,6 +120,7 @@ model Product {
   sku        String   @unique
   categoryId String?  @map("category_id") @db.Uuid
   uom        String   @map("unit_of_measure")
+  unitCost   Decimal? @map("unit_cost") @db.Decimal(14, 2)
   /// Reordering rule: alert when total on-hand falls to or below this.
   minQty     Decimal? @map("min_qty") @db.Decimal(14, 3)
   /// Reordering rule: replenish up to this quantity.
@@ -154,6 +159,7 @@ model Document {
   reference             String    @unique
   /// Supplier (receipts) or customer (deliveries).
   partnerName           String?   @map("partner_name")
+  deliveryAddress       String?   @map("delivery_address")
   /// Free-form source reference, e.g. a sales or purchase order number.
   origin                String?
   sourceLocationId      String?   @map("source_location_id") @db.Uuid

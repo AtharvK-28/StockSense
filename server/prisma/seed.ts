@@ -33,10 +33,10 @@ async function main() {
 
   const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 12);
   const rakesh = await prisma.user.create({
-    data: { name: "Rakesh Mehta", email: "manager@stocksense.app", passwordHash, role: "manager" },
+    data: { loginId: "manager", name: "Rakesh Mehta", email: "manager@stocksense.app", passwordHash, role: "manager" },
   });
   await prisma.user.create({
-    data: { name: "Meena Iyer", email: "staff@stocksense.app", passwordHash, role: "staff" },
+    data: { loginId: "meena.staff", name: "Meena Iyer", email: "staff@stocksense.app", passwordHash, role: "staff" },
   });
 
   const main = await prisma.warehouse.create({
@@ -44,12 +44,19 @@ async function main() {
       name: "Main Warehouse",
       code: "WH",
       address: "Plot 14, MIDC Bhosari, Pune",
-      locations: { create: [{ name: "Stock" }, { name: "Rack A" }, { name: "Rack B" }, { name: "Production Floor" }] },
+      locations: {
+        create: [
+          { name: "Stock", code: "STK1" },
+          { name: "Rack A", code: "RACKA" },
+          { name: "Rack B", code: "RACKB" },
+          { name: "Production Floor", code: "PROD" },
+        ],
+      },
     },
     include: { locations: true },
   });
   const depot = await prisma.warehouse.create({
-    data: { name: "Mumbai Depot", code: "MUM", address: "Bhiwandi Logistics Park, Thane", locations: { create: [{ name: "Stock" }] } },
+    data: { name: "Mumbai Depot", code: "MUM", address: "Bhiwandi Logistics Park, Thane", locations: { create: [{ name: "Stock", code: "STK1" }] } },
     include: { locations: true },
   });
   const loc = (w: typeof main, name: string) => w.locations.find((l) => l.name === name)!.id;
@@ -62,18 +69,18 @@ async function main() {
     ),
   ) as Record<string, string>;
 
-  const product = (name: string, sku: string, category: string, uom: string, minQty?: number, maxQty?: number) =>
-    prisma.product.create({ data: { name, sku, uom, categoryId: categories[category], minQty, maxQty } });
+  const product = (name: string, sku: string, category: string, uom: string, unitCost: number, minQty?: number, maxQty?: number) =>
+    prisma.product.create({ data: { name, sku, uom, unitCost, categoryId: categories[category], minQty, maxQty } });
 
-  const steel = await product("Steel Rods", "STL-001", "Raw Materials", "kg", 50, 500);
-  const aluminium = await product("Aluminium Sheets", "ALU-002", "Raw Materials", "kg", 40, 300);
-  const copper = await product("Copper Wire", "CU-003", "Raw Materials", "m", 100, 1000);
-  const chair = await product("Ergonomic Office Chair", "FUR-101", "Furniture", "Units", 10, 60);
-  const desk = await product("Oak Work Desk", "FUR-102", "Furniture", "Units", 5, 30);
-  const box = await product("Corrugated Box (L)", "PKG-201", "Packaging", "Units", 100, 1000);
-  const wrap = await product("Bubble Wrap Roll", "PKG-202", "Packaging", "Rolls", 20, 100);
-  const bolts = await product("Hex Bolts M8", "HW-301", "Hardware", "Box", 25, 200);
-  const screws = await product("Wood Screws 40mm", "HW-302", "Hardware", "Box", 25, 150);
+  const steel = await product("Steel Rods", "STL-001", "Raw Materials", "kg", 68, 50, 500);
+  const aluminium = await product("Aluminium Sheets", "ALU-002", "Raw Materials", "kg", 245, 40, 300);
+  const copper = await product("Copper Wire", "CU-003", "Raw Materials", "m", 32, 100, 1000);
+  const chair = await product("Ergonomic Office Chair", "FUR-101", "Furniture", "Units", 7499, 10, 60);
+  const desk = await product("Oak Work Desk", "FUR-102", "Furniture", "Units", 3000, 5, 30);
+  const box = await product("Corrugated Box (L)", "PKG-201", "Packaging", "Units", 18, 100, 1000);
+  const wrap = await product("Bubble Wrap Roll", "PKG-202", "Packaging", "Rolls", 420, 20, 100);
+  const bolts = await product("Hex Bolts M8", "HW-301", "Hardware", "Box", 350, 25, 200);
+  const screws = await product("Wood Screws 40mm", "HW-302", "Hardware", "Box", 190, 25, 150);
 
   const make = (type: DocType, input: DocumentInput) =>
     prisma.$transaction((tx) => createDocument(tx, type, input, rakesh.id));
@@ -154,6 +161,7 @@ async function main() {
     (
       await make("delivery", {
         partnerName: "Sharma Furniture House",
+        deliveryAddress: "22 FC Road, Shivajinagar, Pune 411005",
         origin: "SO-1187",
         sourceLocationId: WH.stock,
         scheduledDate: day(-2),
@@ -199,6 +207,7 @@ async function main() {
     (
       await make("delivery", {
         partnerName: "Metro Offices Pvt Ltd",
+        deliveryAddress: "Tower B, Hinjewadi Phase 2, Pune 411057",
         origin: "SO-1192",
         sourceLocationId: WH.stock,
         scheduledDate: day(0),
@@ -208,6 +217,7 @@ async function main() {
   );
   const urban = await make("delivery", {
     partnerName: "Urban Retail Co.",
+    deliveryAddress: "Linking Road, Bandra West, Mumbai 400050",
     origin: "SO-1195",
     sourceLocationId: MUM.stock,
     scheduledDate: day(1),
@@ -227,7 +237,7 @@ async function main() {
     ).id,
   );
 
-  console.log(`Seeded demo data. Log in as manager@stocksense.app / ${DEMO_PASSWORD} (or staff@stocksense.app).`);
+  console.log(`Seeded demo data. Log in as "manager" / ${DEMO_PASSWORD} (or "meena.staff").`);
 }
 
 main()

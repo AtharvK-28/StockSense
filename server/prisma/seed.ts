@@ -62,6 +62,8 @@ async function main() {
       name: "Main Warehouse",
       code: "WH",
       address: "Plot 14, MIDC Bhosari, Pune",
+      latitude: 18.6298,
+      longitude: 73.8478,
       locations: {
         create: [
           { name: "Stock", code: "STK1" },
@@ -74,7 +76,7 @@ async function main() {
     include: { locations: true },
   });
   const depot = await prisma.warehouse.create({
-    data: { name: "Mumbai Depot", code: "MUM", address: "Bhiwandi Logistics Park, Thane", locations: { create: [{ name: "Stock", code: "STK1" }] } },
+    data: { name: "Mumbai Depot", code: "MUM", address: "Bhiwandi Logistics Park, Thane", latitude: 19.2813, longitude: 73.0483, locations: { create: [{ name: "Stock", code: "STK1" }] } },
     include: { locations: true },
   });
   const loc = (w: typeof main, name: string) => w.locations.find((l) => l.name === name)!.id;

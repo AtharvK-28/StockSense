@@ -21,6 +21,7 @@ import { notificationsRouter } from "./routes/notifications";
 import { settingsRouter } from "./routes/settings";
 import { auditRouter } from "./routes/audit";
 import { analyticsRouter } from "./routes/analytics";
+import { exportRouter } from "./routes/export";
 import { locationsRouter, warehousesRouter } from "./routes/warehouses";
 
 export function createApp() {
@@ -55,6 +56,7 @@ export function createApp() {
   api.use("/settings", settingsRouter);
   api.use("/audit", auditRouter);
   api.use("/analytics", analyticsRouter);
+  api.use("/export", exportRouter);
   app.use("/api", api);
 
   app.use("/api", () => {

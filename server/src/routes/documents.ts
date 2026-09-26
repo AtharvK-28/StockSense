@@ -32,6 +32,7 @@ const lineSchema = z.object({
 
 const documentSchema = z.object({
   partnerName: z.string().trim().max(120).nullable().optional(),
+  deliveryAddress: z.string().trim().max(300).nullable().optional(),
   origin: z.string().trim().max(60).nullable().optional(),
   sourceLocationId: uuid.nullable().optional(),
   destinationLocationId: uuid.nullable().optional(),
@@ -106,7 +107,7 @@ async function documentDetail(id: string) {
     include: {
       sourceLocation: locationSummary,
       destinationLocation: locationSummary,
-      createdBy: { select: { id: true, name: true } },
+      createdBy: { select: { id: true, name: true, loginId: true } },
       validatedBy: { select: { id: true, name: true } },
       lines: { include: { product: { include: { category: true } } }, orderBy: { id: "asc" } },
       moves: { include: moveInclude, orderBy: { createdAt: "asc" } },

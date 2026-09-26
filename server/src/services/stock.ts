@@ -29,6 +29,25 @@ export async function onHandByProduct(locationIds?: string[]) {
   return new Map(rows.map((r) => [r.productId, r._sum.quantity ?? ZERO]));
 }
 
+/**
+ * Quantity already promised to open deliveries/transfers (Waiting or Ready) leaving these locations.
+ * "Free to use" = on hand − reserved.
+ */
+export async function reservedByProduct(locationIds?: string[]) {
+  const rows = await prisma.documentLine.groupBy({
+    by: ["productId"],
+    where: {
+      document: {
+        type: { in: ["delivery", "transfer"] },
+        status: { in: ["waiting", "ready"] },
+        sourceLocationId: locationIds ? { in: locationIds } : undefined,
+      },
+    },
+    _sum: { quantity: true },
+  });
+  return new Map(rows.map((r) => [r.productId, r._sum.quantity ?? ZERO]));
+}
+
 /** Quantity to order so a product climbs back to its max (or 2× min) level. */
 export function suggestedReorderQty(onHand: Prisma.Decimal, minQty: Prisma.Decimal | null, maxQty: Prisma.Decimal | null) {
   const target = maxQty ?? (minQty ? minQty.mul(2) : null);

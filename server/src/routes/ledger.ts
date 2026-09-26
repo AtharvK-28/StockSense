@@ -16,6 +16,7 @@ export const moveInclude = {
       id: true,
       reference: true,
       type: true,
+      status: true,
       partnerName: true,
       sourceLocation: locationSummary,
       destinationLocation: locationSummary,

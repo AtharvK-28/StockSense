@@ -18,7 +18,18 @@ const warehouseSchema = z.object({
     .regex(/^[A-Z0-9]{2,6}$/, "Code must be 2–6 letters or numbers, e.g. WH"),
   address: z.string().trim().max(200).nullable().optional(),
 });
-const locationSchema = z.object({ name: z.string().trim().min(1, "Enter a location name").max(60) });
+const locationSchema = z.object({
+  name: z.string().trim().min(1, "Enter a location name").max(60),
+  code: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z0-9]{1,8}$/, "Short code must be 1–8 letters or numbers")
+    .nullable()
+    .optional()
+    .or(z.literal("").transform(() => null)),
+});
+const newLocationSchema = locationSchema.extend({ warehouseId: uuid });
 
 warehousesRouter.get("/", async (_req, res) => {
   const warehouses = await prisma.warehouse.findMany({
@@ -72,6 +83,12 @@ locationsRouter.get("/", async (_req, res) => {
   res.json({ items: locations.map((l) => ({ ...l, fullName: `${l.warehouse.code} / ${l.name}` })) });
 });
 
+locationsRouter.post("/", requireRole("manager"), async (req, res) => {
+  const location = await prisma.location.create({ data: newLocationSchema.parse(req.body) });
+  broadcast("settings");
+  res.status(201).json({ location });
+});
+
 /** On-hand quantity per product at one location (used while drafting deliveries and counts). */
 locationsRouter.get("/:id/stock", async (req, res) => {
   const locationId = uuid.parse(req.params.id);
@@ -81,7 +98,7 @@ locationsRouter.get("/:id/stock", async (req, res) => {
 
 locationsRouter.put("/:id", requireRole("manager"), async (req, res) => {
   const id = uuid.parse(req.params.id);
-  const location = await prisma.location.update({ where: { id }, data: locationSchema.parse(req.body) });
+  const location = await prisma.location.update({ where: { id }, data: newLocationSchema.partial().parse(req.body) });
   broadcast("settings");
   res.json({ location });
 });

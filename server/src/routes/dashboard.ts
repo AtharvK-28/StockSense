@@ -29,7 +29,7 @@ dashboardRouter.get("/", async (req, res) => {
     prisma.document.count({ where: { type, status: { in: OPEN_STATUSES }, AND: scope, ...extra } });
   const late = { scheduledDate: { lt: startOfToday } };
 
-  const [receipts, receiptsLate, receiptsReady, deliveries, deliveriesLate, deliveriesWaiting, transfers, transfersLate, recentMoves] =
+  const [receipts, receiptsLate, receiptsReady, deliveries, deliveriesLate, deliveriesWaiting, deliveriesReady, transfers, transfersLate, recentMoves] =
     await Promise.all([
       count("receipt"),
       count("receipt", late),
@@ -37,6 +37,7 @@ dashboardRouter.get("/", async (req, res) => {
       count("delivery"),
       count("delivery", late),
       count("delivery", { status: "waiting" }),
+      count("delivery", { status: "ready" }),
       count("transfer"),
       count("transfer", late),
       prisma.stockMove.findMany({
@@ -76,7 +77,7 @@ dashboardRouter.get("/", async (req, res) => {
       outOfStock: rows.filter((r) => r.status === "out").length,
       totalUnits: rows.reduce((sum, r) => sum.plus(r.qty), ZERO),
       pendingReceipts: { total: receipts, late: receiptsLate, ready: receiptsReady },
-      pendingDeliveries: { total: deliveries, late: deliveriesLate, waiting: deliveriesWaiting },
+      pendingDeliveries: { total: deliveries, late: deliveriesLate, waiting: deliveriesWaiting, ready: deliveriesReady },
       scheduledTransfers: { total: transfers, late: transfersLate },
     },
     alerts,

@@ -5,7 +5,7 @@ import { prisma } from "../db";
 import { broadcast } from "../lib/events";
 import { badRequest, notFound } from "../lib/http";
 import { OPEN_STATUSES, applyDocument, createDocument } from "../services/documents";
-import { ZERO, onHandByProduct, stockStatus, suggestedReorderQty, warehouseLocationIds } from "../services/stock";
+import { ZERO, onHandByProduct, reservedByProduct, stockStatus, suggestedReorderQty, warehouseLocationIds } from "../services/stock";
 import { moveInclude } from "./ledger";
 
 export const productsRouter = Router();
@@ -24,6 +24,7 @@ const productFields = z.object({
     .regex(/^[A-Z0-9._/-]+$/, "SKU can only use letters, numbers and . _ / -"),
   categoryId: uuid.nullable().optional(),
   uom: z.string().trim().min(1, "Choose a unit of measure").max(20),
+  unitCost: z.coerce.number().min(0, "Cost can't be negative").max(1_000_000_000).nullable().optional(),
   minQty: qty.nullable().optional(),
   maxQty: qty.nullable().optional(),
 });
@@ -42,12 +43,16 @@ const createSchema = productFields
 const updateSchema = productFields.superRefine(maxAboveMin);
 const ruleSchema = z.object({ minQty: qty.nullable(), maxQty: qty.nullable() }).superRefine(maxAboveMin);
 
-function productRow(p: Product & { category: Category | null }, onHand: Prisma.Decimal) {
+function productRow(p: Product & { category: Category | null }, onHand: Prisma.Decimal, reserved: Prisma.Decimal = ZERO) {
+  const free = onHand.minus(reserved);
   return {
     id: p.id,
     name: p.name,
     sku: p.sku,
     uom: p.uom,
+    unitCost: p.unitCost,
+    reserved,
+    freeQty: free.isNegative() ? ZERO : free,
     category: p.category ? { id: p.category.id, name: p.category.name } : null,
     minQty: p.minQty,
     maxQty: p.maxQty,
@@ -70,7 +75,8 @@ productsRouter.get("/", async (req, res) => {
     })
     .parse(req.query);
 
-  const [products, onHand] = await Promise.all([
+  const locationIds = await warehouseLocationIds(f.warehouseId);
+  const [products, onHand, reserved] = await Promise.all([
     prisma.product.findMany({
       where: {
         categoryId: f.categoryId,
@@ -82,11 +88,12 @@ productsRouter.get("/", async (req, res) => {
       include: { category: true },
       orderBy: { name: "asc" },
     }),
-    onHandByProduct(await warehouseLocationIds(f.warehouseId)),
+    onHandByProduct(locationIds),
+    reservedByProduct(locationIds),
   ]);
 
   const rows = products
-    .map((p) => productRow(p, onHand.get(p.id) ?? ZERO))
+    .map((p) => productRow(p, onHand.get(p.id) ?? ZERO, reserved.get(p.id) ?? ZERO))
     .filter((p) => !f.stock || (f.stock === "alert" ? p.status !== "in" : p.status === f.stock));
   res.json({ items: rows });
 });
@@ -139,12 +146,13 @@ productsRouter.get("/:id", async (req, res) => {
   ]);
 
   const onHand = product.stockLevels.reduce((sum, l) => sum.plus(l.quantity), ZERO);
+  const reserved = (await reservedByProduct()).get(id) ?? ZERO;
   const sumOf = (type: string) =>
     openLines.filter((l) => l.document.type === type).reduce((sum, l) => sum.plus(l.quantity), ZERO);
 
   res.json({
     product: {
-      ...productRow(product, onHand),
+      ...productRow(product, onHand, reserved),
       incoming: sumOf("receipt"),
       outgoing: sumOf("delivery"),
       stock: product.stockLevels

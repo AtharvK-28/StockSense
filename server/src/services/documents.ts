@@ -33,6 +33,7 @@ export interface DocumentLineInput {
 
 export interface DocumentInput {
   partnerName?: string | null;
+  deliveryAddress?: string | null;
   origin?: string | null;
   sourceLocationId?: string | null;
   destinationLocationId?: string | null;
@@ -77,6 +78,7 @@ function normalize(type: DocType, input: DocumentInput) {
 
   return {
     partnerName: input.partnerName?.trim() || null,
+    deliveryAddress: type === "delivery" ? input.deliveryAddress?.trim() || null : null,
     origin: input.origin?.trim() || null,
     sourceLocationId,
     destinationLocationId,

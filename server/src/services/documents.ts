@@ -161,17 +161,38 @@ export interface Shortage {
 /** Products on a delivery/transfer that the source location can't currently cover. */
 export async function findShortages(
   client: Client,
-  doc: { sourceLocationId: string | null; lines: { productId: string; quantity: Decimal }[] },
+  doc: { id?: string; sourceLocationId: string | null; lines: { productId: string; quantity: Decimal }[] },
 ): Promise<Shortage[]> {
   if (!doc.sourceLocationId) return [];
   const needed = new Map<string, Decimal>();
   for (const line of doc.lines) needed.set(line.productId, (needed.get(line.productId) ?? ZERO).plus(line.quantity));
+  
   const levels = await client.stockLevel.findMany({
     where: { locationId: doc.sourceLocationId, productId: { in: [...needed.keys()] } },
   });
-  const available = new Map(levels.map((l) => [l.productId, l.quantity]));
+  const onHand = new Map(levels.map((l) => [l.productId, l.quantity]));
+
+  // Enforced stock reservations: subtract quantities reserved by OTHER open deliveries/transfers
+  const reservedRows = await client.documentLine.groupBy({
+    by: ["productId"],
+    where: {
+      productId: { in: [...needed.keys()] },
+      document: {
+        id: doc.id ? { not: doc.id } : undefined,
+        type: { in: ["delivery", "transfer"] },
+        status: { in: ["waiting", "ready"] },
+        sourceLocationId: doc.sourceLocationId,
+      },
+    },
+    _sum: { quantity: true },
+  });
+  const reservedByOthers = new Map(reservedRows.map((r) => [r.productId, r._sum.quantity ?? ZERO]));
+
   return [...needed]
-    .map(([productId, qty]) => ({ productId, needed: qty, available: available.get(productId) ?? ZERO }))
+    .map(([productId, qty]) => {
+      const available = (onHand.get(productId) ?? ZERO).minus(reservedByOthers.get(productId) ?? ZERO);
+      return { productId, needed: qty, available };
+    })
     .filter((s) => s.available.lt(s.needed));
 }
 

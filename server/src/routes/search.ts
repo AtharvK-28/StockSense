@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
 import { ZERO, onHandByProduct } from "../services/stock";
+import { productImageUrl } from "./products";
 
 export const searchRouter = Router();
 
@@ -24,7 +25,7 @@ searchRouter.get("/", async (req, res) => {
     onHandByProduct(),
   ]);
   res.json({
-    products: products.map((p) => ({ ...p, onHand: onHand.get(p.id) ?? ZERO })),
+    products: products.map((p) => ({ ...p, imageUrl: productImageUrl(p), onHand: onHand.get(p.id) ?? ZERO })),
     documents,
   });
 });

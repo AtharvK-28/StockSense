@@ -18,7 +18,9 @@ const warehouseSchema = z.object({
     .toUpperCase()
     .regex(/^[A-Z0-9]{2,6}$/, "Code must be 2–6 letters or numbers, e.g. WH"),
   address: z.string().trim().max(200).nullable().optional(),
-});
+  latitude: z.coerce.number().min(-90).max(90).nullable().optional(),
+  longitude: z.coerce.number().min(-180).max(180).nullable().optional(),
+}).refine((w) => (w.latitude == null) === (w.longitude == null), { path: ["latitude"], message: "Set both latitude and longitude, or neither" });
 const locationSchema = z.object({
   name: z.string().trim().min(1, "Enter a location name").max(60),
   code: z
@@ -73,7 +75,7 @@ warehousesRouter.put("/:id", requireRole("manager"), async (req, res) => {
     entityType: "warehouse",
     entityId: id,
     summary: `Updated warehouse ${warehouse.code} ${warehouse.name}`,
-    changes: before ? diff(before, warehouse, ["name", "code", "address"]) : null,
+    changes: before ? diff(before, warehouse, ["name", "code", "address", "latitude", "longitude"]) : null,
   });
   broadcast("settings");
   res.json({ warehouse });

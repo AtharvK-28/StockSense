@@ -1,11 +1,11 @@
 import { Prisma, type Category, type Product } from "@prisma/client";
-import { Router } from "express";
+import express, { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
 import { managerOnly } from "../lib/auth";
 import { broadcast } from "../lib/events";
 import { audit, diff } from "../services/audit";
-import { badRequest, notFound } from "../lib/http";
+import { HttpError, badRequest, notFound } from "../lib/http";
 import { OPEN_STATUSES, applyDocument, createDocument } from "../services/documents";
 import { ZERO, onHandByProduct, reservedByProduct, stockStatus, suggestedReorderQty, warehouseLocationIds } from "../services/stock";
 import { moveInclude } from "./ledger";
@@ -61,9 +61,23 @@ function productRow(p: Product & { category: Category | null }, onHand: Prisma.D
     onHand,
     status: stockStatus(onHand, p.minQty),
     suggestedQty: suggestedReorderQty(onHand, p.minQty, p.maxQty),
+    imageUrl: productImageUrl(p),
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
   };
+}
+
+/** Versioned URL of a product's photo, or null. The version lets browsers cache it forever. */
+export function productImageUrl(p: { id: string; imageUpdatedAt: Date | null }) {
+  return p.imageUpdatedAt ? `/api/products/${p.id}/image?v=${p.imageUpdatedAt.getTime()}` : null;
+}
+
+/** Recognises the image formats we accept from their first bytes (never trust the declared type). */
+function sniffImage(buf: Buffer): string | null {
+  if (buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
+  if (buf.length > 8 && buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
+  if (buf.length > 12 && buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WEBP") return "image/webp";
+  return null;
 }
 
 productsRouter.get("/", async (req, res) => {
@@ -235,4 +249,57 @@ productsRouter.post("/:id/replenish", managerOnly, async (req, res) => {
   );
   broadcast("documents");
   res.status(201).json({ document });
+});
+
+productsRouter.get("/:id/image", async (req, res) => {
+  const id = uuid.parse(req.params.id);
+  const image = await prisma.productImage.findUnique({ where: { productId: id } });
+  if (!image) throw notFound("No photo for this product");
+  res.set({
+    "Content-Type": image.contentType,
+    "X-Content-Type-Options": "nosniff",
+    // The URL carries a version, so a new photo gets a new URL.
+    "Cache-Control": req.query.v ? "private, max-age=31536000, immutable" : "private, no-cache",
+  });
+  res.send(Buffer.from(image.data));
+});
+
+/** Upload or replace the photo: the raw image bytes (JPEG, PNG or WebP, up to 2 MB) as the body. */
+productsRouter.put(
+  "/:id/image",
+  managerOnly,
+  express.raw({ type: () => true, limit: "2mb" }),
+  async (req, res) => {
+    const id = uuid.parse(req.params.id);
+    const body = req.body as unknown;
+    if (!Buffer.isBuffer(body) || body.length === 0) throw badRequest("Choose an image to upload");
+    const contentType = sniffImage(body);
+    if (!contentType) throw new HttpError(415, "Use a JPEG, PNG or WebP image");
+    if (!(await prisma.product.findUnique({ where: { id }, select: { id: true } }))) throw notFound("Product not found");
+    const data = new Uint8Array(body);
+    const product = await prisma.$transaction(async (tx) => {
+      await tx.productImage.upsert({
+        where: { productId: id },
+        create: { productId: id, contentType, data },
+        update: { contentType, data },
+      });
+      const product = await tx.product.update({ where: { id }, data: { imageUpdatedAt: new Date() } });
+      await audit(tx, { userId: req.user!.id, action: "product.update", entityType: "product", entityId: id, summary: `Changed the photo of ${product.sku} ${product.name}` });
+      return product;
+    });
+    broadcast("products");
+    res.json({ imageUrl: productImageUrl(product) });
+  },
+);
+
+productsRouter.delete("/:id/image", managerOnly, async (req, res) => {
+  const id = uuid.parse(req.params.id);
+  const product = await prisma.$transaction(async (tx) => {
+    await tx.productImage.deleteMany({ where: { productId: id } });
+    const product = await tx.product.update({ where: { id }, data: { imageUpdatedAt: null } });
+    await audit(tx, { userId: req.user!.id, action: "product.update", entityType: "product", entityId: id, summary: `Removed the photo of ${product.sku} ${product.name}` });
+    return product;
+  });
+  broadcast("products");
+  res.json({ imageUrl: null });
 });

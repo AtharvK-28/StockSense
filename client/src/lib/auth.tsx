@@ -49,6 +49,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
+/** True when the signed-in user is an inventory manager (the server enforces the same rules). */
+export function useIsManager() {
+  return useAuth().user?.role === "manager";
+}
+
 export function useAuth() {
   const value = useContext(AuthContext);
   if (!value) throw new Error("useAuth must be used inside AuthProvider");

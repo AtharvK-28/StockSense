@@ -1,0 +1,20 @@
+{
+  "name": "stocksense",
+  "private": true,
+  "description": "StockSense — modular, ledger-first inventory management system",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c magenta,cyan \"npm run dev -w server\" \"npm run dev -w client\"",
+    "build": "npm run build -w server && npm run build -w client",
+    "start": "npm run start -w server",
+    "setup": "npm run db:migrate -w server && npm run db:seed -w server",
+    "test": "npm test -w server",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

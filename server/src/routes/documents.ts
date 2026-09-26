@@ -3,7 +3,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
 import { broadcast } from "../lib/events";
-import { notFound } from "../lib/http";
+import { forbidden, notFound } from "../lib/http";
 import {
   OPEN_STATUSES,
   cancelDocument,
@@ -51,14 +51,23 @@ export const filterSchema = z.object({
   type: z.nativeEnum(DocType).optional(),
   status: statusList,
   warehouseId: uuid.optional(),
+  locationId: uuid.optional(),
   categoryId: uuid.optional(),
   q: z.string().trim().max(100).optional(),
   limit: z.coerce.number().int().min(1).max(500).default(200),
 });
 
 /** Where-clauses shared by the document list and dashboard KPIs. */
-export function documentScope(f: { warehouseId?: string; categoryId?: string; q?: string }): Prisma.DocumentWhereInput[] {
+export function documentScope(f: {
+  warehouseId?: string;
+  locationId?: string;
+  categoryId?: string;
+  q?: string;
+}): Prisma.DocumentWhereInput[] {
   const scope: Prisma.DocumentWhereInput[] = [];
+  if (f.locationId) {
+    scope.push({ OR: [{ sourceLocationId: f.locationId }, { destinationLocationId: f.locationId }] });
+  }
   if (f.warehouseId) {
     scope.push({
       OR: [{ sourceLocation: { warehouseId: f.warehouseId } }, { destinationLocation: { warehouseId: f.warehouseId } }],
@@ -166,6 +175,13 @@ const actions = {
 documentsRouter.post("/:id/:action", async (req, res) => {
   const id = uuid.parse(req.params.id);
   const action = z.enum(Object.keys(actions) as [keyof typeof actions]).parse(req.params.action);
+  if (req.user!.role !== "manager") {
+    if (action === "cancel") throw forbidden("Only inventory managers can cancel operations");
+    if (action === "validate") {
+      const doc = await prisma.document.findUnique({ where: { id }, select: { type: true } });
+      if (doc?.type === "adjustment") throw forbidden("Only inventory managers can approve stock adjustments");
+    }
+  }
   await actions[action](id, req.user!.id);
   broadcast(action === "validate" ? "stock" : "documents");
   res.json({ document: await documentDetail(id) });

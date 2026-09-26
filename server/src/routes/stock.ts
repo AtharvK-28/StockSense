@@ -7,8 +7,9 @@ import { applyDocument, createDocument } from "../services/documents";
 export const stockRouter = Router();
 
 /**
- * "Update stock" from the Stock page: sets a product's quantity at a location. It is recorded as a
- * validated inventory adjustment, so the change appears in the ledger like any other.
+ * "Update stock" from the Stock page: sets a product's quantity at a location, recorded as an
+ * inventory adjustment. A manager's update is applied immediately; a staff member's count is
+ * submitted (status Ready) for a manager to approve.
  */
 stockRouter.post("/adjust", async (req, res) => {
   const body = z
@@ -20,6 +21,7 @@ stockRouter.post("/adjust", async (req, res) => {
     })
     .parse(req.body);
   const userId = req.user!.id;
+  const applied = req.user!.role === "manager";
   const document = await prisma.$transaction(async (tx) => {
     const doc = await createDocument(
       tx,
@@ -31,9 +33,10 @@ stockRouter.post("/adjust", async (req, res) => {
       },
       userId,
     );
-    await applyDocument(tx, doc.id, userId);
+    if (applied) await applyDocument(tx, doc.id, userId);
+    else await tx.document.update({ where: { id: doc.id }, data: { status: "ready" } });
     return doc;
   });
-  broadcast("stock");
-  res.status(201).json({ document });
+  broadcast(applied ? "stock" : "documents");
+  res.status(201).json({ document, applied });
 });

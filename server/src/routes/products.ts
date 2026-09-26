@@ -2,6 +2,7 @@ import { Prisma, type Category, type Product } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
+import { managerOnly } from "../lib/auth";
 import { broadcast } from "../lib/events";
 import { badRequest, notFound } from "../lib/http";
 import { OPEN_STATUSES, applyDocument, createDocument } from "../services/documents";
@@ -98,7 +99,7 @@ productsRouter.get("/", async (req, res) => {
   res.json({ items: rows });
 });
 
-productsRouter.post("/", async (req, res) => {
+productsRouter.post("/", managerOnly, async (req, res) => {
   const { initialStock, ...data } = createSchema.parse(req.body);
   const userId = req.user!.id;
   const product = await prisma.$transaction(async (tx) => {
@@ -169,7 +170,7 @@ productsRouter.get("/:id", async (req, res) => {
   });
 });
 
-productsRouter.put("/:id", async (req, res) => {
+productsRouter.put("/:id", managerOnly, async (req, res) => {
   const id = uuid.parse(req.params.id);
   const data = updateSchema.parse(req.body);
   const product = await prisma.product.update({ where: { id }, data });
@@ -177,7 +178,7 @@ productsRouter.put("/:id", async (req, res) => {
   res.json({ product });
 });
 
-productsRouter.put("/:id/rule", async (req, res) => {
+productsRouter.put("/:id/rule", managerOnly, async (req, res) => {
   const id = uuid.parse(req.params.id);
   const data = ruleSchema.parse(req.body);
   const product = await prisma.product.update({ where: { id }, data });
@@ -186,7 +187,7 @@ productsRouter.put("/:id/rule", async (req, res) => {
 });
 
 /** Turns a reordering rule into a draft receipt for the suggested quantity. */
-productsRouter.post("/:id/replenish", async (req, res) => {
+productsRouter.post("/:id/replenish", managerOnly, async (req, res) => {
   const id = uuid.parse(req.params.id);
   const body = z.object({ locationId: uuid.optional(), quantity: z.coerce.number().positive().optional() }).parse(req.body ?? {});
   const product = await prisma.product.findUnique({ where: { id }, include: { stockLevels: { orderBy: { quantity: "desc" } } } });

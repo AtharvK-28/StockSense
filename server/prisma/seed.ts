@@ -35,7 +35,7 @@ async function main() {
   const rakesh = await prisma.user.create({
     data: { loginId: "manager", name: "Rakesh Mehta", email: "manager@stocksense.app", passwordHash, role: "manager" },
   });
-  await prisma.user.create({
+  const meena = await prisma.user.create({
     data: { loginId: "meena.staff", name: "Meena Iyer", email: "staff@stocksense.app", passwordHash, role: "staff" },
   });
 
@@ -236,6 +236,21 @@ async function main() {
       })
     ).id,
   );
+
+  // Meena (staff) counted bubble wrap and found 2 rolls damaged; it waits for Rakesh to approve.
+  const count = await prisma.$transaction((tx) =>
+    createDocument(
+      tx,
+      "adjustment",
+      {
+        sourceLocationId: MUM.stock,
+        notes: "Shelf count",
+        lines: [{ productId: wrap.id, countedQuantity: 28, notes: "2 rolls water-damaged" }],
+      },
+      meena.id,
+    ),
+  );
+  await confirmDocument(count.id);
 
   console.log(`Seeded demo data. Log in as "manager" / ${DEMO_PASSWORD} (or "meena.staff").`);
 }

@@ -34,7 +34,6 @@ const signupSchema = z.object({
   name: z.string().trim().max(80).optional(),
   email,
   password,
-  role: z.enum(["manager", "staff"]).default("manager"),
 });
 
 authRouter.post("/signup", async (req, res) => {
@@ -45,12 +44,15 @@ authRouter.post("/signup", async (req, res) => {
   if (await prisma.user.findUnique({ where: { email: body.email } })) {
     throw new HttpError(409, "An account with this email already exists");
   }
+  // Nobody can make themselves a manager: the very first account runs the system, everyone
+  // after that joins as warehouse staff until a manager promotes them on the Team page.
+  const role = (await prisma.user.count()) === 0 ? "manager" : "staff";
   const user = await prisma.user.create({
     data: {
       loginId: body.loginId,
       name: body.name || body.loginId,
       email: body.email,
-      role: body.role,
+      role,
       passwordHash: await bcrypt.hash(body.password, 12),
     },
   });

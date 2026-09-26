@@ -53,6 +53,9 @@ export const requireRole =
     next();
   };
 
+/** Shorthand for manager-only routes. */
+export const managerOnly = requireRole("manager");
+
 export function publicUser(user: User) {
   return { id: user.id, loginId: user.loginId, name: user.name, email: user.email, role: user.role, createdAt: user.createdAt };
 }

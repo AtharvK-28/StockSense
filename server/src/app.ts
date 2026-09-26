@@ -16,6 +16,7 @@ import { productsRouter } from "./routes/products";
 import { profileRouter } from "./routes/profile";
 import { searchRouter } from "./routes/search";
 import { stockRouter } from "./routes/stock";
+import { usersRouter } from "./routes/users";
 import { locationsRouter, warehousesRouter } from "./routes/warehouses";
 
 export function createApp() {
@@ -45,6 +46,7 @@ export function createApp() {
   api.use("/search", searchRouter);
   api.use("/stock", stockRouter);
   api.use("/profile", profileRouter);
+  api.use("/users", usersRouter);
   app.use("/api", api);
 
   app.use("/api", () => {

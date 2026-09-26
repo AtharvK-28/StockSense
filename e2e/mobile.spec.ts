@@ -34,3 +34,14 @@ test("dark mode follows the OS and can be overridden", async ({ browser }) => {
   await page.getByRole("radio", { name: "Light" }).click();
   expect(await surface()).toBe("rgb(255, 255, 255)");
 });
+
+test("the header fits between phone and desktop widths", async ({ page }) => {
+  await login(page);
+  for (const width of [640, 700, 768, 900, 1024]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
+    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(scrollWidth, `header overflows at ${width}px`).toBeLessThanOrEqual(width);
+  }
+});

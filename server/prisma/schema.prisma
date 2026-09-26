@@ -51,9 +51,11 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at")
 
   otpCodes      OtpCode[]
-  createdDocs   Document[]  @relation("DocCreatedBy")
-  validatedDocs Document[]  @relation("DocValidatedBy")
+  createdDocs   Document[]     @relation("DocCreatedBy")
+  validatedDocs Document[]     @relation("DocValidatedBy")
   moves         StockMove[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
 
   @@map("users")
 }
@@ -166,6 +168,10 @@ model Document {
   destinationLocationId String?   @map("destination_location_id") @db.Uuid
   scheduledDate         DateTime  @default(now()) @map("scheduled_date")
   notes                 String?
+  /// The document this one carries the unprocessed remainder of.
+  backorderOfId         String?   @map("backorder_of_id") @db.Uuid
+  /// The validated document this one returns goods for.
+  returnOfId            String?   @map("return_of_id") @db.Uuid
   pickedAt              DateTime? @map("picked_at")
   packedAt              DateTime? @map("packed_at")
   createdById           String    @map("created_by") @db.Uuid
@@ -180,6 +186,10 @@ model Document {
   validatedBy         User?          @relation("DocValidatedBy", fields: [validatedById], references: [id])
   lines               DocumentLine[]
   moves               StockMove[]
+  backorderOf         Document?      @relation("Backorders", fields: [backorderOfId], references: [id])
+  backorders          Document[]     @relation("Backorders")
+  returnOf            Document?      @relation("Returns", fields: [returnOfId], references: [id])
+  returns             Document[]     @relation("Returns")
 
   @@index([type, status])
   @@index([scheduledDate])
@@ -192,6 +202,8 @@ model DocumentLine {
   productId        String   @map("product_id") @db.Uuid
   /// Quantity moved. For adjustments this holds the applied delta once validated.
   quantity         Decimal  @default(0) @db.Decimal(14, 3)
+  /// Quantity actually processed at validation (received / shipped / moved). Null = the full demand.
+  doneQuantity     Decimal? @map("done_quantity") @db.Decimal(14, 3)
   /// Adjustments only: the physically counted quantity.
   countedQuantity  Decimal? @map("counted_quantity") @db.Decimal(14, 3)
   /// Adjustments only: recorded stock at the moment of validation.
@@ -234,4 +246,48 @@ model Sequence {
   value  Int    @default(0)
 
   @@map("sequences")
+}
+
+/// In-app notifications (bell menu). One row per recipient.
+model Notification {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  kind      String
+  title     String
+  body      String?
+  link      String?
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+  @@map("notifications")
+}
+
+/// Who changed what outside the stock ledger (catalog, settings, roles, document lifecycle).
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  summary    String
+  changes    Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+/// Company-wide settings (e.g. auto-reorder), stored as JSON values.
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("app_settings")
 }

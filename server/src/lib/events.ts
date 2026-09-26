@@ -4,7 +4,7 @@ import type { RequestHandler, Response } from "express";
 // and refetches. No third-party realtime service needed.
 const clients = new Set<Response>();
 
-export type ChangeTopic = "documents" | "stock" | "products" | "settings";
+export type ChangeTopic = "documents" | "stock" | "products" | "settings" | "notifications";
 
 export function broadcast(topic: ChangeTopic) {
   const payload = `event: change\ndata: ${JSON.stringify({ topic, at: Date.now() })}\n\n`;

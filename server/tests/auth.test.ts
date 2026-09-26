@@ -60,6 +60,16 @@ describe("auth", () => {
     expect((await post("/auth/signup", { loginId: "usertwo", email: "a@test.dev", password: "Secret@123" })).status).toBe(409);
   });
 
+  it("locks login after 5 failed attempts", async () => {
+    await post("/auth/signup", { loginId: "lockme1", email: "lock@test.dev", password: "Secret@123" });
+    for (let i = 0; i < 5; i++) {
+      expect((await post("/auth/login", { login: "lockme1", password: "Wrong@1234" })).status).toBe(401);
+    }
+    const locked = await post("/auth/login", { login: "lockme1", password: "Secret@123" });
+    expect(locked.status).toBe(429);
+    expect(locked.body.error).toMatch(/Too many failed attempts/);
+  });
+
   it("resets a password with a single-use OTP", async () => {
     await post("/auth/signup", { loginId: "rakesh01", email: "rakesh@test.dev", password: "Secret@123" });
 

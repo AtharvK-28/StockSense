@@ -6,7 +6,8 @@ export async function resetDatabase() {
   // TRUNCATE bypasses the ledger's append-only row trigger, which is what we want in tests.
   await prisma.$executeRawUnsafe(`
     TRUNCATE stock_ledger_entries, document_lines, documents, stock_levels, products,
-             product_categories, locations, warehouses, otp_codes, users, sequences CASCADE`);
+             product_categories, locations, warehouses, otp_codes, users, sequences,
+             notifications, audit_logs, app_settings CASCADE`);
 }
 
 export async function fixture() {

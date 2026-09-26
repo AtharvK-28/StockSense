@@ -21,7 +21,7 @@ export function setSession(res: Response, userId: string) {
   res.cookie(COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: env.isProd,
+    secure: env.cookieSecure,
     maxAge: SESSION_DAYS * 24 * 60 * 60 * 1000,
     path: "/",
   });

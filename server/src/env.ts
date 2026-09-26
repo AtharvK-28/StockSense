@@ -16,6 +16,8 @@ export const env = {
   jwtSecret: required("JWT_SECRET"),
   clientOrigin: process.env.CLIENT_ORIGIN ?? "http://localhost:5173",
   isProd: process.env.NODE_ENV === "production",
+  /** Secure (HTTPS-only) session cookies. Defaults to on in production; set COOKIE_SECURE=false for plain-HTTP local runs. */
+  cookieSecure: process.env.COOKIE_SECURE ? process.env.COOKIE_SECURE === "true" : process.env.NODE_ENV === "production",
   otpDevEcho: process.env.OTP_DEV_ECHO === "true" && process.env.NODE_ENV !== "production",
   smtp: {
     host: process.env.SMTP_HOST ?? "",

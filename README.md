@@ -17,12 +17,12 @@ npm run setup                           # apply migrations + load demo data
 npm run dev                             # API on :4000, web on http://localhost:5173
 ```
 
-Demo logins (password `Demo@1234`):
+Demo logins (password `Demo@1234`; the account email also works in the Login ID field):
 
-| Role | Email |
-| --- | --- |
-| Inventory manager | `manager@stocksense.app` |
-| Warehouse staff | `staff@stocksense.app` |
+| Role | Login ID | Email |
+| --- | --- | --- |
+| Inventory manager | `manager` | `manager@stocksense.app` |
+| Warehouse staff | `meena.staff` | `staff@stocksense.app` |
 
 Single-process mode: `npm run build && npm start` serves the app and API together on http://localhost:4000.
 
@@ -37,12 +37,15 @@ Single-process mode: `npm run build && npm start` serves the app and API togethe
 
 ## Features
 
-- **Auth:** sign up / log in (httpOnly JWT cookie), OTP password reset (6-digit, hashed, single-use, 10-minute expiry, rate-limited). Set `OTP_DEV_ECHO=true` to show the code on screen for demos; configure `SMTP_*` to email it.
+- **Auth:** sign up with a unique Login ID (6–12 chars), email and a strong password (upper + lower case, special character, more than 8 characters); log in with the Login ID (httpOnly JWT cookie), OTP password reset (6-digit, hashed, single-use, 10-minute expiry, rate-limited). Set `OTP_DEV_ECHO=true` to show the code on screen for demos; configure `SMTP_*` to email it.
 - **Dashboard:** live KPIs (products in stock, low/out of stock, pending receipts, pending deliveries, scheduled transfers), filterable by document type, status, warehouse and category; low-stock alerts with one-click reorder; recent ledger activity.
 - **Products:** create/update with SKU, category, unit of measure and optional opening stock; stock per location; incoming/outgoing forecast; categories; reordering rules (min/max) that raise alerts and draft replenishment receipts.
 - **Operations:** receipts, delivery orders (pick → pack → validate), internal transfers, stock adjustments, all following Draft → Waiting → Ready → Done / Canceled.
+- **Stock:** per-unit cost, on hand, reserved and free-to-use quantities with stock valuation; update a count in place (logged as an adjustment).
+- **List / Kanban:** receipts, deliveries, transfers, adjustments and move history switch between a list and a status (or move-type) Kanban board.
+- **Printable documents:** receipts and delivery orders print as a clean sheet with signature lines.
 - **Move history:** the full ledger with search, filters, date range and CSV export.
-- **Settings:** multiple warehouses, each with its own locations (racks, zones, floors).
+- **Settings:** multiple warehouses (name, short code, address) and their locations (name, short code), each managed on its own page.
 - **Global search:** press <kbd>/</kbd> anywhere to find a SKU, product or document reference.
 
 ## How stock changes

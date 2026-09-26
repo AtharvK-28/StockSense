@@ -118,4 +118,35 @@ describe("auth", () => {
     });
     expect(disabled.status).toBe(200);
   });
+
+  /** Signs up a user with an authenticator app enabled; returns its TOTP secret. */
+  async function totpUser(loginId: string) {
+    const signup = await post("/auth/signup", { loginId, email: `${loginId}@test.dev`, password: "Secret@123" });
+    const setup = await post("/profile/2fa/setup", { currentPassword: "Secret@123" }, signup.cookie);
+    const secret: string = setup.body.secret;
+    await post("/profile/2fa/confirm", { code: speakeasy.totp({ secret, encoding: "base32" }) }, signup.cookie);
+    return secret;
+  }
+
+  it("doesn't let the 2FA challenge token stand in for a session", async () => {
+    await totpUser("bypass01");
+    const login = await post("/auth/login", { login: "bypass01", password: "Secret@123" });
+    expect(login.status).toBe(202);
+    // Only the password was proven: the challenge must not open the app.
+    const me = await fetch(`${base}/auth/me`, { headers: { Cookie: `ss_session=${login.body.challenge}` } });
+    expect(me.status).toBe(401);
+    const products = await fetch(`${base}/products`, { headers: { Cookie: `ss_session=${login.body.challenge}` } });
+    expect(products.status).toBe(401);
+  });
+
+  it("locks the authenticator step after 5 wrong codes", async () => {
+    const secret = await totpUser("brute001");
+    const login = await post("/auth/login", { login: "brute001", password: "Secret@123" });
+    for (let i = 0; i < 5; i++) {
+      expect((await post("/auth/login/2fa", { challenge: login.body.challenge, code: "000000" })).status).toBe(401);
+    }
+    // Even the right code is refused while locked, so guessing all 10^6 codes is impossible.
+    const locked = await post("/auth/login/2fa", { challenge: login.body.challenge, code: speakeasy.totp({ secret, encoding: "base32" }) });
+    expect(locked.status).toBe(429);
+  });
 });

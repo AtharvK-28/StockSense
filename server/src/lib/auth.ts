@@ -16,8 +16,14 @@ declare global {
 const COOKIE = "ss_session";
 const SESSION_DAYS = 7;
 
+/**
+ * Session tokens are stamped with `purpose: "session"`. Other tokens signed with the same secret
+ * (e.g. the 2FA login challenge, issued after the password alone) must never open a session.
+ */
+const SESSION_PURPOSE = "session";
+
 export function setSession(res: Response, userId: string) {
-  const token = jwt.sign({ sub: userId }, env.jwtSecret, { expiresIn: `${SESSION_DAYS}d` });
+  const token = jwt.sign({ sub: userId, purpose: SESSION_PURPOSE }, env.jwtSecret, { expiresIn: `${SESSION_DAYS}d` });
   res.cookie(COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
@@ -36,7 +42,9 @@ export const requireAuth: RequestHandler = async (req, _res, next) => {
   if (!token) throw unauthorized();
   let userId: string;
   try {
-    userId = (jwt.verify(token, env.jwtSecret) as jwt.JwtPayload).sub as string;
+    const payload = jwt.verify(token, env.jwtSecret) as jwt.JwtPayload;
+    if (payload.purpose !== SESSION_PURPOSE || typeof payload.sub !== "string") throw new Error("Not a session token");
+    userId = payload.sub;
   } catch {
     throw unauthorized("Your session has expired, please log in again");
   }

@@ -18,6 +18,8 @@ const OTP_MAX_PER_HOUR = 5;
 const OTP_MAX_ATTEMPTS = 5;
 /** 5 wrong passwords per Login ID + IP locks further attempts for 15 minutes. */
 const loginFailures = failureLimiter({ max: 5, windowMs: 15 * 60 * 1000 });
+/** 5 wrong authenticator codes per account lock the 2FA step for 15 minutes (a 6-digit code is otherwise guessable). */
+const totpFailures = failureLimiter({ max: 5, windowMs: 15 * 60 * 1000 });
 
 const email = z.string().trim().toLowerCase().email("Enter a valid email address");
 export const password = z
@@ -99,10 +101,16 @@ authRouter.post("/login/2fa", async (req, res) => {
     throw unauthorized("Your two-step login has expired. Please sign in again.");
   }
   if (payload.purpose !== "totp-login" || typeof payload.sub !== "string") throw unauthorized("Your two-step login is invalid. Please sign in again.");
+  const wait = totpFailures.retryAfter(payload.sub);
+  if (wait > 0) {
+    throw new HttpError(429, `Too many wrong codes. Try again in ${Math.ceil(wait / 60_000)} minute${wait > 60_000 ? "s" : ""}.`);
+  }
   const user = await prisma.user.findUnique({ where: { id: payload.sub } });
   if (!user?.totpEnabled || !user.totpSecret || !verifyTotp(decryptTotpSecret(user.totpSecret), body.code)) {
+    totpFailures.fail(payload.sub);
     throw unauthorized("Invalid authenticator code");
   }
+  totpFailures.reset(payload.sub);
   setSession(res, user.id);
   res.json({ user: publicUser(user) });
 });

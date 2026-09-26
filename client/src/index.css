@@ -77,11 +77,19 @@
     --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.55);
     --shadow-lift: 0 8px 28px rgb(0 0 0 / 0.6);
   }
+  /* Embedded maps have no dark style: invert them so they don't glare. */
+  :root[data-theme="dark"] .map-frame,
+  :root[data-os-dark]:not([data-theme="light"]) .map-frame {
+    filter: invert(0.9) hue-rotate(180deg) brightness(0.95) contrast(0.9);
+  }
   }
 }
 
 @layer base {
   html {
+    /* Thin, quiet scrollbars that follow the theme. */
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line) transparent;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -106,6 +114,17 @@
 @utility brand-gradient {
   background-image: linear-gradient(to right, #e61e4d 0%, #e31c5f 50%, #d70466 100%);
   color: var(--color-on-brand);
+}
+
+/* Scrolls without a visible bar; pair with `scroll-fade-*` so hidden content is still hinted. */
+@utility scroll-fade-bottom {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent);
+}
+@utility scroll-fade-top {
+  mask-image: linear-gradient(to top, #000 calc(100% - 48px), transparent);
+}
+@utility scroll-fade-both {
+  mask-image: linear-gradient(to bottom, transparent, #000 48px, #000 calc(100% - 48px), transparent);
 }
 
 @utility scrollbar-none {

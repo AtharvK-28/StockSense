@@ -33,6 +33,8 @@ export interface LocationOption extends LocationRef {
 
 export interface Warehouse extends WarehouseRef {
   address: string | null;
+  latitude: number | null;
+  longitude: number | null;
   createdAt: string;
   locations: { id: string; name: string; code: string | null; warehouseId: string; productCount: number; totalQuantity: number }[];
 }
@@ -57,6 +59,7 @@ export interface ProductRow {
   onHand: number;
   status: StockStatus;
   suggestedQty: number | null;
+  imageUrl: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -179,6 +182,6 @@ export interface Dashboard {
 }
 
 export interface SearchResults {
-  products: (ProductSummary & { onHand: number; category: { name: string } | null })[];
+  products: (ProductSummary & { onHand: number; imageUrl: string | null; category: { name: string } | null })[];
   documents: { id: string; reference: string; type: DocType; status: DocStatus; partnerName: string | null }[];
 }

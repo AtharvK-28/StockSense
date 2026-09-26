@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 export type ThemePref = "light" | "dark" | "system";
 const KEY = "ss:theme";
@@ -19,24 +19,47 @@ export function applyTheme(pref: ThemePref) {
   else root.dataset.theme = pref;
 }
 
+const osDark = window.matchMedia("(prefers-color-scheme: dark)");
+
 /** Keeps `data-os-dark` in sync with the OS setting, for the "system" preference. */
 export function watchOsTheme() {
-  const mq = window.matchMedia("(prefers-color-scheme: dark)");
-  const sync = () => document.documentElement.toggleAttribute("data-os-dark", mq.matches);
+  const sync = () => {
+    document.documentElement.toggleAttribute("data-os-dark", osDark.matches);
+    emit();
+  };
   sync();
-  mq.addEventListener("change", sync);
+  osDark.addEventListener("change", sync);
+}
+
+// One shared store, so the header toggle and the menu switch always agree.
+let current: ThemePref = readPref();
+const listeners = new Set<() => void>();
+const emit = () => listeners.forEach((l) => l());
+const subscribe = (l: () => void) => {
+  listeners.add(l);
+  return () => listeners.delete(l);
+};
+
+export function setTheme(pref: ThemePref) {
+  current = pref;
+  applyTheme(pref);
+  try {
+    if (pref === "system") localStorage.removeItem(KEY);
+    else localStorage.setItem(KEY, pref);
+  } catch {
+    /* storage unavailable: the choice lasts for this visit */
+  }
+  emit();
 }
 
 export function useTheme() {
-  const [pref, setPref] = useState<ThemePref>(readPref);
-  useEffect(() => {
-    applyTheme(pref);
-    try {
-      if (pref === "system") localStorage.removeItem(KEY);
-      else localStorage.setItem(KEY, pref);
-    } catch {
-      /* storage unavailable: the choice lasts for this visit */
-    }
-  }, [pref]);
-  return [pref, setPref] as const;
+  const pref = useSyncExternalStore(subscribe, () => current);
+  return [pref, setTheme] as const;
+}
+
+/** What's actually on screen right now: the explicit choice, or the OS setting for "system". */
+export function useResolvedTheme(): "light" | "dark" {
+  const pref = useSyncExternalStore(subscribe, () => current);
+  const dark = useSyncExternalStore(subscribe, () => osDark.matches);
+  return pref === "system" ? (dark ? "dark" : "light") : pref;
 }

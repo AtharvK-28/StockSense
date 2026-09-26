@@ -1,8 +1,6 @@
 # StockSense
 
-<p align="center">
-  <img src="docs/excalidrawMockup/image.png" alt="StockSense Preview" width="100%">
-</p>
+
 
 [![CI](https://github.com/AtharvK-28/StockSense/actions/workflows/ci.yml/badge.svg)](https://github.com/AtharvK-28/StockSense/actions/workflows/ci.yml)
 
@@ -27,9 +25,7 @@ A modular, real-time inventory management system built for accuracy and speed. E
 
 StockSense is designed with a **"local-first"** philosophy, prioritizing data ownership and offline reliability.
 
-<p align="center">
-  <img src="docs/excalidrawMockup/Screenshot 2026-09-26 091002.png" alt="System Overview" width="80%">
-</p>
+
 
 - **No hosted services:** It operates entirely without Firebase, Supabase, or third-party proprietary APIs.
 - **Local ecosystem:** OTP emails use plain SMTP (optional), live updates use standard Server-Sent Events (SSE), and barcodes/photos are generated, read, and stored locally.
@@ -39,29 +35,9 @@ StockSense is designed with a **"local-first"** philosophy, prioritizing data ow
 
 ## Key Features
 
-<table>
-  <tr>
-    <td width="50%"><img src="docs/excalidrawMockup/Screenshot 2026-09-26 091102.png" alt="Feature 1" width="100%"></td>
-    <td width="50%">
-      <h3>Robust Authentication & Security</h3>
-      Sign up with a unique Login ID and strong password. Rate-limited logins (5 failed attempts = 15m lockout). Includes OTP password resets and <strong>Two-step verification (TOTP)</strong>.
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <h3>Comprehensive Dashboard</h3>
-      Live KPIs for receipts, deliveries, stock levels, and scheduled transfers. Advanced valuation reports, dead stock analysis, and category-based metrics.
-    </td>
-    <td width="50%"><img src="docs/excalidrawMockup/Screenshot 2026-09-26 091143.png" alt="Feature 2" width="100%"></td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/excalidrawMockup/Screenshot 2026-09-26 091149.png" alt="Feature 3" width="100%"></td>
-    <td width="50%">
-      <h3>Advanced Operations & Auto-Reordering</h3>
-      Track deliveries (pick → pack → validate), partial fulfillment (backorders), and returned documents. Define rules for automatic draft receipt generation when stock runs low.
-    </td>
-  </tr>
-</table>
+- **Robust Authentication & Security:** Sign up with a unique Login ID and strong password. Rate-limited logins (5 failed attempts = 15m lockout). Includes OTP password resets and **Two-step verification (TOTP)**.
+- **Comprehensive Dashboard:** Live KPIs for receipts, deliveries, stock levels, and scheduled transfers. Advanced valuation reports, dead stock analysis, and category-based metrics.
+- **Advanced Operations & Auto-Reordering:** Track deliveries (pick → pack → validate), partial fulfillment (backorders), and returned documents. Define rules for automatic draft receipt generation when stock runs low.
 
 - **Role-Based Access Control:** Delineate duties between **Inventory Managers** (configure rules, approve counts) and **Warehouse Staff** (submit counts, run operations).
 - **Universal Export & Barcodes:** Export active views to CSV/JSON, print Code 128 labels, and scan via device cameras.
@@ -136,9 +112,7 @@ npm run dev
 
 Data integrity is paramount. Nothing changes stock except explicitly validating a document. Validation runs in a single robust database transaction:
 
-<p align="center">
-  <img src="docs/excalidrawMockup/Screenshot 2026-09-26 091209.png" alt="Ledger Flow" width="70%">
-</p>
+
 
 1. **Atomic Claims:** The document is claimed atomically (status transitions to `done`), preventing race conditions.
 2. **Ledger Consistency:** Each item line locks its `stock_levels` row, verifies availability, updates the quantity, and appends a `stock_ledger_entries` row (containing the signed delta and new balance).

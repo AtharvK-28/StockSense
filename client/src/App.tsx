@@ -16,6 +16,8 @@ import { Categories } from "./pages/products/Categories";
 import { ProductList } from "./pages/products/ProductList";
 import { ProductPage } from "./pages/products/ProductPage";
 import { Reordering } from "./pages/products/Reordering";
+import { Stock } from "./pages/products/Stock";
+import { Locations } from "./pages/settings/Locations";
 import { Warehouses } from "./pages/settings/Warehouses";
 
 function Splash() {
@@ -86,7 +88,9 @@ export function App() {
           <Route path="operations/:kind/new" element={<Keyed><DocumentPage /></Keyed>} />
           <Route path="operations/:kind/:id" element={<Keyed><DocumentPage /></Keyed>} />
           <Route path="moves" element={<MoveHistory />} />
+          <Route path="stock" element={<Stock />} />
           <Route path="settings/warehouses" element={<Warehouses />} />
+          <Route path="settings/locations" element={<Locations />} />
           <Route path="profile" element={<Profile />} />
           <Route path="*" element={<NotFound />} />
         </Route>

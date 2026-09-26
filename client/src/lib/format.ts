@@ -12,6 +12,8 @@ const dateFormat = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "sh
 const shortDate = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" });
 const timeFormat = new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit" });
 
+const moneyFormat = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 });
+export const fmtMoney = (n: number | null | undefined) => (n == null ? "—" : moneyFormat.format(n));
 export const fmtQty = (n: number | null | undefined) => (n == null ? "—" : qtyFormat.format(n));
 export const fmtSigned = (n: number) => (n > 0 ? `+${fmtQty(n)}` : fmtQty(n));
 export const fmtDate = (d: string | Date) => dateFormat.format(new Date(d));

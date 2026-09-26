@@ -6,6 +6,7 @@ export type StockStatus = "in" | "low" | "out";
 
 export interface User {
   id: string;
+  loginId: string;
   name: string;
   email: string;
   role: Role;
@@ -26,13 +27,14 @@ export interface LocationRef {
 
 export interface LocationOption extends LocationRef {
   warehouseId: string;
+  code: string | null;
   fullName: string;
 }
 
 export interface Warehouse extends WarehouseRef {
   address: string | null;
   createdAt: string;
-  locations: { id: string; name: string; warehouseId: string; productCount: number; totalQuantity: number }[];
+  locations: { id: string; name: string; code: string | null; warehouseId: string; productCount: number; totalQuantity: number }[];
 }
 
 export interface Category {
@@ -46,6 +48,9 @@ export interface ProductRow {
   name: string;
   sku: string;
   uom: string;
+  unitCost: number | null;
+  reserved: number;
+  freeQty: number;
   category: { id: string; name: string } | null;
   minQty: number | null;
   maxQty: number | null;
@@ -82,6 +87,7 @@ export interface LedgerEntry {
     id: string;
     reference: string;
     type: DocType;
+    status: DocStatus;
     partnerName: string | null;
     sourceLocation: LocationRef | null;
     destinationLocation: LocationRef | null;
@@ -94,6 +100,7 @@ interface DocumentBase {
   status: DocStatus;
   reference: string;
   partnerName: string | null;
+  deliveryAddress: string | null;
   origin: string | null;
   sourceLocationId: string | null;
   destinationLocationId: string | null;
@@ -126,7 +133,7 @@ export interface DocumentLine {
 }
 
 export interface DocumentDetail extends DocumentBase {
-  createdBy: { id: string; name: string };
+  createdBy: { id: string; name: string; loginId: string };
   validatedBy: { id: string; name: string } | null;
   lines: DocumentLine[];
   moves: LedgerEntry[];
@@ -140,7 +147,7 @@ export interface Dashboard {
     outOfStock: number;
     totalUnits: number;
     pendingReceipts: { total: number; late: number; ready: number };
-    pendingDeliveries: { total: number; late: number; waiting: number };
+    pendingDeliveries: { total: number; late: number; waiting: number; ready: number };
     scheduledTransfers: { total: number; late: number };
   };
   alerts: {

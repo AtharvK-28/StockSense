@@ -1,11 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { clsx } from "clsx";
 import {
+  Boxes,
   ChevronUp,
   History,
   LayoutGrid,
   LogOut,
   type LucideIcon,
+  MapPin,
   Menu,
   Package,
   Plus,
@@ -49,19 +51,26 @@ interface NavItem {
 const NAV: { heading?: string; items: NavItem[] }[] = [
   { items: [{ to: "/", label: "Dashboard", icon: LayoutGrid, end: true }] },
   {
+    heading: "Operations",
+    items: DOC_TYPE_LIST.map((m) => ({ to: `/operations/${m.slug}`, label: m.plural, icon: m.icon })),
+  },
+  {
     heading: "Products",
     items: [
       { to: "/products", label: "All products", icon: Package, end: true },
+      { to: "/stock", label: "Stock", icon: Boxes },
       { to: "/products/categories", label: "Categories", icon: Tags },
       { to: "/products/reordering", label: "Reordering rules", icon: RefreshCcw },
     ],
   },
-  {
-    heading: "Operations",
-    items: DOC_TYPE_LIST.map((m) => ({ to: `/operations/${m.slug}`, label: m.plural, icon: m.icon })),
-  },
   { items: [{ to: "/moves", label: "Move history", icon: History }] },
-  { heading: "Settings", items: [{ to: "/settings/warehouses", label: "Warehouses", icon: Warehouse }] },
+  {
+    heading: "Settings",
+    items: [
+      { to: "/settings/warehouses", label: "Warehouses", icon: Warehouse },
+      { to: "/settings/locations", label: "Locations", icon: MapPin },
+    ],
+  },
 ];
 
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
@@ -166,6 +175,52 @@ function ProfileMenu({ onNavigate }: { onNavigate?: () => void }) {
         </span>
         <ChevronUp className={clsx("size-4 text-muted transition", !open && "rotate-180")} />
       </button>
+    </div>
+  );
+}
+
+/** Avatar menu in the top-right corner (mirrors the sidebar profile menu). */
+function HeaderProfile() {
+  const { user, logout } = useAuth();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+  useClickOutside(ref, () => setOpen(false));
+  if (!user) return null;
+  return (
+    <div ref={ref} className="relative hidden sm:block">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-label="Account menu"
+        className="flex h-11 items-center gap-2 rounded-full border border-line bg-white pr-1.5 pl-3 transition hover:shadow-card"
+      >
+        <Menu className="size-4" strokeWidth={2.25} />
+        <Avatar name={user.name} size="sm" />
+      </button>
+      {open && (
+        <div className="animate-rise-in absolute top-full right-0 z-40 mt-2 w-64 overflow-hidden rounded-xl border border-hairline bg-white py-2 shadow-pop">
+          <div className="px-4 py-2.5">
+            <p className="truncate text-sm font-semibold">{user.name}</p>
+            <p className="truncate text-xs text-muted">@{user.loginId} · {user.role === "manager" ? "Inventory manager" : "Warehouse staff"}</p>
+          </div>
+          <div className="my-1 h-px bg-hairline" />
+          <Link to="/profile" onClick={() => setOpen(false)} className="flex items-center gap-3 px-4 py-2.5 text-[15px] hover:bg-canvas">
+            <UserRound className="size-4" /> My profile
+          </Link>
+          <button
+            type="button"
+            onClick={async () => {
+              await logout();
+              navigate("/login");
+            }}
+            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[15px] hover:bg-canvas"
+          >
+            <LogOut className="size-4" /> Log out
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -330,8 +385,8 @@ export function Layout() {
   }, [location.pathname]);
 
   return (
-    <div className="min-h-screen lg:pl-64">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-hairline bg-white lg:block">
+    <div className="min-h-screen lg:pl-64 print:pl-0">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-hairline bg-white lg:block print:hidden">
         <Sidebar />
       </aside>
 
@@ -346,7 +401,7 @@ export function Layout() {
         </div>
       )}
 
-      <header className="sticky top-0 z-20 border-b border-hairline bg-white/95 backdrop-blur">
+      <header className="sticky top-0 z-20 border-b border-hairline bg-white/95 backdrop-blur print:hidden">
         <div className="flex h-20 items-center gap-3 px-4 sm:px-6 lg:px-10">
           <button type="button" aria-label="Open menu" onClick={() => setDrawer(true)} className="grid size-10 shrink-0 place-items-center rounded-full hover:bg-canvas lg:hidden">
             <Menu className="size-5" />
@@ -365,6 +420,7 @@ export function Layout() {
             {live ? "Live" : "Offline"}
           </span>
           <CreateMenu />
+          <HeaderProfile />
         </div>
       </header>
 

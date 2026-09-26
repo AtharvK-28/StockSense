@@ -28,7 +28,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={useMemo(() => push, [push])}>
       {children}
-      <div aria-live="polite" className="pointer-events-none fixed inset-x-4 bottom-4 z-[60] flex flex-col items-center gap-2 sm:inset-x-auto sm:left-6 sm:items-start">
+      <div aria-live="polite" className="print:hidden pointer-events-none fixed inset-x-4 bottom-4 z-[60] flex flex-col items-center gap-2 sm:inset-x-auto sm:left-6 sm:items-start">
         {toasts.map((t) => (
           <div
             key={t.id}

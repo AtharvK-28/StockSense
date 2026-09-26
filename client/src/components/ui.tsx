@@ -143,10 +143,11 @@ export function Field({
 }) {
   return (
     <div className={clsx("flex flex-col gap-1.5", className)}>
-      <label htmlFor={htmlFor} className="text-sm font-semibold text-ink">
-        {label}
+      {/* Wrapping the control associates the label with it for screen readers. */}
+      <label htmlFor={htmlFor} className="flex flex-col gap-1.5">
+        <span className="text-sm font-semibold text-ink">{label}</span>
+        {children}
       </label>
-      {children}
       {error ? <p className="text-[13px] text-bad">{error}</p> : hint ? <p className="text-[13px] text-muted">{hint}</p> : null}
     </div>
   );

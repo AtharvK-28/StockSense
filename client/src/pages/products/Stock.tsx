@@ -85,7 +85,29 @@ export function Stock() {
             {search ? "Nothing matches your search." : "Add products and receive them to see stock here."}
           </EmptyState>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          <ul className="divide-y divide-hairline sm:hidden">
+            {items.map((p) => (
+              <li key={p.id} className="flex items-center gap-3 px-5 py-4">
+                <div className="min-w-0 flex-1">
+                  <Link to={`/products/${p.id}`} className="font-semibold">
+                    {p.name}
+                  </Link>
+                  <p className="font-mono text-xs text-muted">{p.sku}</p>
+                  <p className="mt-1 text-sm">
+                    <span className="font-semibold">
+                      {fmtQty(p.onHand)} {p.uom}
+                    </span>{" "}
+                    <span className="text-muted">on hand · {fmtQty(p.freeQty)} free</span>
+                  </p>
+                </div>
+                <Button size="sm" variant="subtle" icon={PencilLine} onClick={() => setEditing(p)}>
+                  {isManager ? "Update" : "Count"}
+                </Button>
+              </li>
+            ))}
+          </ul>
+          <div className="hidden overflow-x-auto sm:block">
             <table className="w-full min-w-[900px] text-left text-sm">
               <thead>
                 <tr className="border-b border-hairline text-xs text-muted">
@@ -128,6 +150,7 @@ export function Stock() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </Card>
       {editing && <UpdateStockModal product={editing} onClose={() => setEditing(null)} />}

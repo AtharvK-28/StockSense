@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import { LayoutGrid, List, Package, Plus, Search, Tags, Warehouse } from "lucide-react";
+import { Barcode, LayoutGrid, List, Package, Plus, Search, Tags, Warehouse } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { Button, Card, Chip, EmptyState, IconButton, PageHeader, SelectPill, Skeleton, StockBadge } from "../../components/ui";
@@ -72,13 +72,20 @@ export function ProductList() {
         title="Products"
         subtitle={items ? `${items.length} product${items.length === 1 ? "" : "s"}${search ? ` matching “${search}”` : ""}` : "Loading…"}
         actions={
-          isManager && (
-            <Link to="/products/new">
-              <Button variant="primary" icon={Plus}>
-                New product
+          <>
+            <Link to="/products/labels">
+              <Button variant="subtle" icon={Barcode}>
+                Print labels
               </Button>
             </Link>
-          )
+            {isManager && (
+              <Link to="/products/new">
+                <Button variant="primary" icon={Plus}>
+                  New product
+                </Button>
+              </Link>
+            )}
+          </>
         }
       />
 

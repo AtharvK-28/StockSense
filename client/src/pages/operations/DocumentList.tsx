@@ -64,7 +64,7 @@ export function DocumentList() {
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <label className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-full border border-line bg-white px-4 transition focus-within:border-ink focus-within:ring-1 focus-within:ring-ink sm:max-w-sm">
+        <label className="flex h-10 min-w-0 flex-1 basis-full items-center gap-2 rounded-full border border-line bg-white px-4 transition focus-within:border-ink focus-within:ring-1 focus-within:ring-ink sm:max-w-sm sm:basis-auto">
           <Search className="size-4 shrink-0 text-muted" />
           <input
             value={q}

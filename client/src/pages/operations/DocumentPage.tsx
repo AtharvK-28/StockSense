@@ -1,12 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { clsx } from "clsx";
-import { ArrowRight, Check, ChevronRight, CircleAlert, FileQuestion, Plus, Printer, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { ArrowRight, Check, ChevronRight, CircleAlert, FileQuestion, Plus, Printer, ScanLine, Trash2, Undo2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
+import { Barcode } from "../../components/Barcode";
+import { ScanDialog, type ScanResult } from "../../components/Scanner";
 import { ProductPicker, LocationSelect } from "../../components/pickers";
 import { useToast } from "../../components/toast";
 import { docRoute } from "../../components/DocumentTable";
-import { Button, Card, CardHeader, EmptyState, ErrorNote, Field, IconButton, Input, PageHeader, Select, Skeleton, StatusBadge, Textarea } from "../../components/ui";
+import { Button, Card, CardHeader, EmptyState, ErrorNote, Field, IconButton, Input, Modal, PageHeader, Select, Skeleton, StatusBadge, Textarea } from "../../components/ui";
 import { useAuth } from "../../lib/auth";
 import { api, errorMessage } from "../../lib/api";
 import {
@@ -24,7 +26,7 @@ import {
   toDateInput,
 } from "../../lib/format";
 import { useLocations, useProducts } from "../../lib/queries";
-import type { DocStatus, DocType, DocumentDetail, LocationOption, ProductRow } from "../../lib/types";
+import type { DocStatus, DocType, DocumentDetail, DocumentLink, LocationOption, ProductRow } from "../../lib/types";
 
 type Action = "confirm" | "check" | "pick" | "pack" | "validate" | "cancel";
 
@@ -255,31 +257,38 @@ export function DocumentPage() {
     update({ lines: draft!.lines.map((l) => (l.key === key ? { ...l, ...patch } : l)) });
 
   const run = useMutation({
-    mutationFn: async ({ action, saveFirst }: { action?: Action; saveFirst: boolean }) => {
+    mutationFn: async ({ action, saveFirst, body }: { action?: Action; saveFirst: boolean; body?: unknown }) => {
       let current = doc;
       if (isNew) {
         current = (await api<{ document: DocumentDetail }>("/documents", { method: "POST", body: { type, ...payload(type!, draft!) } })).document;
       } else if (saveFirst) {
         current = (await api<{ document: DocumentDetail }>(`/documents/${id}`, { method: "PUT", body: payload(type!, draft!) })).document;
       }
+      let backorder: { id: string; reference: string } | null = null;
       if (action) {
         try {
-          current = (await api<{ document: DocumentDetail }>(`/documents/${current!.id}/${action}`, { method: "POST" })).document;
+          const res = await api<{ document: DocumentDetail; backorder?: { id: string; reference: string } | null }>(
+            `/documents/${current!.id}/${action}`,
+            { method: "POST", body },
+          );
+          current = res.document;
+          backorder = res.backorder ?? null;
         } catch (err) {
           // The document was saved; surface the action error on its page.
           if (isNew) navigate(docPath(current!), { replace: true });
           throw err;
         }
       }
-      return { document: current!, action };
+      return { document: current!, action, backorder };
     },
-    onSuccess: ({ document, action }) => {
+    onSuccess: ({ document, action, backorder }) => {
       setDirty(false);
       setError(null);
       qc.setQueryData(["document", document.id], document);
       qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "me" && !(q.queryKey[0] === "document" && q.queryKey[1] === document.id) });
       if (isNew) navigate(docPath(document), { replace: true });
-      toast(toastFor(document, action));
+      toast(toastFor(document, action, backorder));
+      setBackorderAsk(null);
     },
     onError: (err) => {
       setError(errorMessage(err));
@@ -289,6 +298,72 @@ export function DocumentPage() {
   });
 
   const productMap = useMemo(() => new Map((products.data ?? []).map((p) => [p.id, p])), [products.data]);
+
+  // Quantities actually processed while a Ready receipt/delivery/transfer is being worked.
+  const [doneQty, setDoneQty] = useState<Record<string, string>>({});
+  const [backorderAsk, setBackorderAsk] = useState<{ name: string; remaining: number; uom: string }[] | null>(null);
+  const [scanOpen, setScanOpen] = useState(false);
+  // Lines touched by the scanner while processing: their first scan resets the count to 1.
+  const scannedLines = useRef(new Set<string>());
+  useEffect(() => {
+    setDoneQty({});
+    scannedLines.current.clear();
+  }, [doc?.id, doc?.updatedAt]);
+  const processing = !!doc && doc.status === "ready" && doc.type !== "adjustment";
+  const doneLines = () => doc!.lines.map((l) => ({ id: l.id, doneQuantity: doneQty[l.id] === undefined || doneQty[l.id] === "" ? l.quantity : Number(doneQty[l.id]) }));
+
+  const returnDoc = useMutation({
+    mutationFn: () => api<{ document: DocumentDetail }>(`/documents/${doc!.id}/return`, { method: "POST" }),
+    onSuccess: ({ document }) => {
+      qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "me" });
+      toast({ title: `Return ${document.reference} started`, description: "Check the quantities, then mark it as To Do." });
+      navigate(docPath(document));
+    },
+    onError: (err) => toast({ title: errorMessage(err), tone: "error" }),
+  });
+
+  const findBySku = (code: string) => products.data?.find((p) => p.sku.toLowerCase() === code.toLowerCase());
+
+  /** Scanner: adds lines while drafting, counts processed quantities while a Ready document is worked. */
+  const onScan = (code: string): ScanResult => {
+    const product = findBySku(code);
+    if (!product) return { ok: false, message: `No product with SKU ${code}` };
+    if (processing && doc) {
+      const line = doc.lines.find((l) => l.productId === product.id);
+      if (!line) return { ok: false, message: `${product.name} isn't on ${doc.reference}` };
+      const first = !scannedLines.current.has(line.id);
+      scannedLines.current.add(line.id);
+      const next = first ? 1 : Number(doneQty[line.id] ?? 0) + 1;
+      setDoneQty((d) => ({ ...d, [line.id]: String(next) }));
+      return { ok: true, message: `${product.name}: ${fmtQty(next)} of ${fmtQty(line.quantity)} ${product.uom}` };
+    }
+    if (!draft) return { ok: false, message: "This document can't be changed" };
+    const field = type === "adjustment" ? "countedQuantity" : "quantity";
+    const existing = draft.lines.find((l) => l.productId === product.id);
+    let next = 1;
+    if (existing) {
+      next = Number(existing[field] || 0) + 1;
+      updateLine(existing.key, { [field]: String(next) });
+    } else {
+      const blank = draft.lines.find((l) => !l.productId);
+      if (blank) updateLine(blank.key, { productId: product.id, [field]: "1" });
+      else update({ lines: [...draft.lines, { ...blankLine(product.id), [field]: "1" }] });
+    }
+    return { ok: true, message: `${product.name}: ${fmtQty(next)} ${product.uom}` };
+  };
+
+  /** Validate, asking about a backorder first if less than the demand was processed. */
+  const validateNow = () => {
+    if (processing) {
+      const lines = doneLines();
+      const shortfall = doc!.lines
+        .map((l, i) => ({ name: l.product.name, uom: l.product.uom, remaining: l.quantity - lines[i]!.doneQuantity }))
+        .filter((x) => x.remaining > 0);
+      if (shortfall.length) return setBackorderAsk(shortfall);
+      return run.mutate({ action: "validate", saveFirst: false, body: { lines } });
+    }
+    run.mutate({ action: "validate", saveFirst: editable && dirty });
+  };
 
   if (!routeMeta && !doc) return <EmptyState icon={FileQuestion} title="Unknown operation type" />;
   if (!isNew && docQuery.isError) {
@@ -364,7 +439,7 @@ export function DocumentPage() {
                 variant="primary"
                 loading={busy && run.variables?.action === primary.action}
                 disabled={busy}
-                onClick={() => run.mutate({ action: primary.action, saveFirst: editable && dirty })}
+                onClick={() => (primary.action === "validate" ? validateNow() : run.mutate({ action: primary.action, saveFirst: editable && dirty }))}
               >
                 {primary.label}
               </Button>
@@ -377,6 +452,11 @@ export function DocumentPage() {
             {(isNew || (editable && dirty)) && (
               <Button variant="subtle" disabled={busy} loading={busy && !run.variables?.action} onClick={() => run.mutate({ saveFirst: true })}>
                 {isNew ? "Save as draft" : "Save changes"}
+              </Button>
+            )}
+            {doc?.status === "done" && doc.type !== "adjustment" && (
+              <Button variant="subtle" icon={Undo2} loading={returnDoc.isPending} onClick={() => returnDoc.mutate()}>
+                Return
               </Button>
             )}
             {doc && (
@@ -430,6 +510,13 @@ export function DocumentPage() {
 
             <Card>
               <CardHeader
+                action={
+                  (editable || processing) && (
+                    <Button size="sm" variant="subtle" icon={ScanLine} onClick={() => setScanOpen(true)}>
+                      Scan
+                    </Button>
+                  )
+                }
                 title={type === "adjustment" ? "Counted products" : "Products"}
                 subtitle={
                   type === "adjustment"
@@ -465,7 +552,7 @@ export function DocumentPage() {
                     onRemove={(key) => update({ lines: draft!.lines.filter((l) => l.key !== key) })}
                   />
                 ) : (
-                  <LinesView doc={doc!} />
+                  <LinesView doc={doc!} done={processing ? doneQty : undefined} onDone={processing ? (lineId, v) => setDoneQty((d) => ({ ...d, [lineId]: v })) : undefined} />
                 )}
               </div>
             </Card>
@@ -536,6 +623,19 @@ export function DocumentPage() {
                 </ul>
               )}
 
+              {doc && (doc.backorderOf || doc.backorders.length > 0 || doc.returnOf || doc.returns.length > 0) && (
+                <div className="mt-5 space-y-2 rounded-xl border border-hairline p-4 text-sm">
+                  {doc.backorderOf && <RelatedDoc label="Backorder of" doc={doc.backorderOf} />}
+                  {doc.backorders.map((b) => (
+                    <RelatedDoc key={b.id} label="Backorder" doc={b} />
+                  ))}
+                  {doc.returnOf && <RelatedDoc label="Return of" doc={doc.returnOf} />}
+                  {doc.returns.map((r) => (
+                    <RelatedDoc key={r.id} label="Returned in" doc={r} />
+                  ))}
+                </div>
+              )}
+
               <dl className="mt-5 space-y-2 border-t border-hairline pt-5 text-sm">
                 <div className="flex justify-between gap-4">
                   <dt className="text-muted">Responsible</dt>
@@ -559,6 +659,28 @@ export function DocumentPage() {
         </div>
       </div>
       {doc && <PrintSheet doc={doc} />}
+      <ScanDialog
+        open={scanOpen}
+        onClose={() => setScanOpen(false)}
+        onScan={onScan}
+        title={processing ? `Scan ${type === "receipt" ? "received" : type === "delivery" ? "shipped" : "moved"} items` : "Scan products"}
+        hint={
+          processing
+            ? "Each scan counts one unit. The first scan of a product resets its quantity to 1."
+            : type === "adjustment"
+              ? "Each scan counts one unit of that product."
+              : "Each scan adds one unit — scanning a new product adds a line."
+        }
+      />
+      {backorderAsk && doc && (
+        <BackorderModal
+          doc={doc}
+          shortfall={backorderAsk}
+          busy={run.isPending}
+          onClose={() => setBackorderAsk(null)}
+          onChoose={(backorder) => run.mutate({ action: "validate", saveFirst: false, body: { lines: doneLines(), backorder } })}
+        />
+      )}
     </div>
   );
 }
@@ -584,7 +706,10 @@ function PrintSheet({ doc }: { doc: DocumentDetail }) {
           <p className="text-2xl font-bold">StockSense</p>
           <p className="text-sm">{meta.label}</p>
         </div>
-        <p className="text-2xl font-bold">{doc.reference}</p>
+        <div className="text-right">
+          <p className="text-2xl font-bold">{doc.reference}</p>
+          <Barcode value={doc.reference} height={40} module={1.5} showText={false} />
+        </div>
       </div>
       <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
         {rows.map(([k, v]) => (
@@ -623,7 +748,18 @@ function PrintSheet({ doc }: { doc: DocumentDetail }) {
   );
 }
 
-function toastFor(doc: DocumentDetail, action?: Action) {
+function RelatedDoc({ label, doc }: { label: string; doc: DocumentLink }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-muted">{label}</span>
+      <Link to={docPath(doc)} className="flex items-center gap-2 font-semibold hover:underline">
+        {doc.reference} <StatusBadge status={doc.status} />
+      </Link>
+    </div>
+  );
+}
+
+function toastFor(doc: DocumentDetail, action?: Action, backorder?: { reference: string } | null) {
   const summary = doc.lines
     .slice(0, 2)
     .map((l) => `${doc.type === "adjustment" ? fmtSigned(l.quantity) : fmtQty(l.quantity)} ${l.product.uom} ${l.product.name}`)
@@ -632,7 +768,7 @@ function toastFor(doc: DocumentDetail, action?: Action) {
     case "validate":
       return {
         title: { receipt: "Received — stock increased", delivery: "Shipped — stock reduced", transfer: "Transfer complete", adjustment: "Adjustment applied" }[doc.type],
-        description: summary,
+        description: backorder ? `${summary} · backorder ${backorder.reference} created for the rest` : summary,
       };
     case "confirm":
       if (doc.type === "adjustment") return { title: `${doc.reference} sent for approval`, description: "A manager will review your count." };
@@ -775,7 +911,56 @@ function LinesEditor({
   const isAdjustment = type === "adjustment";
   return (
     <div>
-      <div className="overflow-x-auto">
+      {/* Phones: one card per line with full-width controls. */}
+      <ul className="divide-y divide-hairline sm:hidden">
+        {lines.map((line) => {
+          const product = productMap.get(line.productId);
+          const available = stock?.get(line.productId) ?? 0;
+          const qty = Number(line.quantity || 0);
+          const short = showAvailable && !!line.productId && qty > available;
+          const counted = line.countedQuantity === "" ? null : Number(line.countedQuantity);
+          const diff = counted == null ? null : counted - available;
+          return (
+            <li key={line.key} className={clsx("space-y-3 px-5 py-4", short && "bg-bad-50/70")}>
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <ProductPicker value={line.productId} onChange={(pid) => onChange(line.key, { productId: pid })} products={products} />
+                </div>
+                <IconButton icon={Trash2} label="Remove line" onClick={() => onRemove(line.key)} disabled={lines.length === 1} className="mt-1" />
+              </div>
+              <div className="flex items-end gap-3">
+                <div className="relative flex-1">
+                  <span className="mb-1 block text-xs font-semibold text-muted">{isAdjustment ? "Counted" : "Quantity"}</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="any"
+                    inputMode="decimal"
+                    className="h-12 pr-14 text-right text-lg"
+                    value={isAdjustment ? line.countedQuantity : line.quantity}
+                    onChange={(e) => onChange(line.key, isAdjustment ? { countedQuantity: e.target.value } : { quantity: e.target.value })}
+                    placeholder="0"
+                    invalid={short}
+                    aria-label={isAdjustment ? "Counted quantity" : "Quantity"}
+                  />
+                  <span className="pointer-events-none absolute right-3 bottom-3.5 text-xs text-muted">{product?.uom}</span>
+                </div>
+                {line.productId && (showAvailable || isAdjustment) && (
+                  <div className="pb-1 text-right text-xs">
+                    <p className="text-muted">{isAdjustment ? "Recorded" : "Available"}</p>
+                    <p className={clsx("text-sm font-semibold", short && "text-bad")}>
+                      {fmtQty(available)} {product?.uom}
+                    </p>
+                    {isAdjustment && diff != null && diff !== 0 && <p className={clsx("font-semibold", diff > 0 ? "text-ok" : "text-bad")}>{fmtSigned(diff)}</p>}
+                  </div>
+                )}
+              </div>
+              {isAdjustment && <Input className="h-11" value={line.notes} onChange={(e) => onChange(line.key, { notes: e.target.value })} placeholder="Reason, e.g. Damaged" aria-label="Reason" />}
+            </li>
+          );
+        })}
+      </ul>
+      <div className="hidden overflow-x-auto sm:block">
         <table className={clsx("w-full text-left text-sm", isAdjustment ? "min-w-[860px]" : "min-w-[640px]")}>
           <thead>
             <tr className="border-b border-hairline text-xs text-muted">
@@ -854,29 +1039,116 @@ function LinesEditor({
   );
 }
 
-function LinesView({ doc }: { doc: DocumentDetail }) {
+function LinesView({
+  doc,
+  done,
+  onDone,
+}: {
+  doc: DocumentDetail;
+  /** Processed quantity per line while a Ready document is being worked (input values). */
+  done?: Record<string, string>;
+  onDone?: (lineId: string, value: string) => void;
+}) {
   const isAdjustment = doc.type === "adjustment";
-  const done = doc.status === "done";
-  const showAvailable = !done && (doc.type === "delivery" || doc.type === "transfer") && isOpen(doc.status);
+  const isDone = doc.status === "done";
+  const processing = !!done && !!onDone;
+  const showAvailable = !isDone && (doc.type === "delivery" || doc.type === "transfer") && isOpen(doc.status);
+  const doneLabel = doc.type === "receipt" ? "Received" : doc.type === "delivery" ? "Shipped" : "Moved";
+  const showDone = !isAdjustment && (processing || isDone);
+
+  const rows = doc.lines.map((l) => {
+    const recorded = isDone ? l.recordedQuantity : l.available;
+    const diff = isDone ? l.quantity : l.countedQuantity != null && recorded != null ? l.countedQuantity - recorded : null;
+    const short = showAvailable && l.available != null && l.available < l.quantity;
+    const processed = processing ? Number(done![l.id] ?? l.quantity) : (l.doneQuantity ?? l.quantity);
+    const partial = showDone && processed < l.quantity;
+    return { l, recorded, diff, short, processed, partial };
+  });
+
+  const doneInput = (l: DocumentDetail["lines"][number], className?: string) => (
+    <div className={clsx("relative", className)}>
+      <Input
+        type="number"
+        min={0}
+        step="any"
+        inputMode="decimal"
+        aria-label={`${doneLabel} quantity for ${l.product.name}`}
+        className="h-10 pr-12 text-right"
+        value={done![l.id] ?? String(l.quantity)}
+        onChange={(e) => onDone!(l.id, e.target.value)}
+      />
+      <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-muted">{l.product.uom}</span>
+    </div>
+  );
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[560px] text-left text-sm">
-        <thead>
-          <tr className="border-b border-hairline text-xs text-muted">
-            <th className="py-3 pr-4 pl-6 font-semibold">Product</th>
-            {isAdjustment && <th className="px-4 py-3 text-right font-semibold">Recorded</th>}
-            <th className="px-4 py-3 text-right font-semibold">{isAdjustment ? "Counted" : "Quantity"}</th>
-            {isAdjustment && <th className="px-4 py-3 text-right font-semibold">Difference</th>}
-            {showAvailable && <th className="px-4 py-3 text-right font-semibold">Available</th>}
-            {isAdjustment && <th className="py-3 pr-6 pl-4 font-semibold">Reason</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {doc.lines.map((l) => {
-            const recorded = done ? l.recordedQuantity : l.available;
-            const diff = done ? l.quantity : l.countedQuantity != null && recorded != null ? l.countedQuantity - recorded : null;
-            const short = showAvailable && l.available != null && l.available < l.quantity;
-            return (
+    <>
+      {/* Phones: one card per line, big touch targets for the warehouse floor. */}
+      <ul className="divide-y divide-hairline sm:hidden">
+        {rows.map(({ l, recorded, diff, short, processed, partial }) => (
+          <li key={l.id} className={clsx("px-5 py-4", short && "bg-bad-50/70")}>
+            <Link to={`/products/${l.productId}`} className={clsx("font-semibold", short && "text-bad")}>
+              {l.product.name}
+            </Link>
+            <p className="font-mono text-xs text-muted">{l.product.sku}</p>
+            <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+              {isAdjustment ? (
+                <>
+                  <div>
+                    <dt className="text-xs text-muted">Recorded → Counted</dt>
+                    <dd className="font-semibold">
+                      {fmtQty(recorded)} → {fmtQty(l.countedQuantity)} {l.product.uom}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-muted">Difference</dt>
+                    <dd className={clsx("font-semibold", !diff ? "text-muted" : diff > 0 ? "text-ok" : "text-bad")}>{diff == null ? "—" : fmtSigned(diff)}</dd>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <dt className="text-xs text-muted">Demand</dt>
+                    <dd className="font-semibold">
+                      {fmtQty(l.quantity)} {l.product.uom}
+                    </dd>
+                  </div>
+                  {showAvailable && (
+                    <div>
+                      <dt className="text-xs text-muted">Available</dt>
+                      <dd className={clsx("font-semibold", short && "text-bad")}>{fmtQty(l.available)}</dd>
+                    </div>
+                  )}
+                  {showDone && (
+                    <div className="col-span-2">
+                      <dt className="text-xs text-muted">{doneLabel}</dt>
+                      <dd className={clsx("font-semibold", partial && "text-warn")}>
+                        {processing ? doneInput(l, "mt-1") : `${fmtQty(processed)} ${l.product.uom}`}
+                      </dd>
+                    </div>
+                  )}
+                </>
+              )}
+            </dl>
+          </li>
+        ))}
+      </ul>
+
+      <div className="hidden overflow-x-auto sm:block">
+        <table className="w-full min-w-[560px] text-left text-sm">
+          <thead>
+            <tr className="border-b border-hairline text-xs text-muted">
+              <th className="py-3 pr-4 pl-6 font-semibold">Product</th>
+              {isAdjustment && <th className="px-4 py-3 text-right font-semibold">Recorded</th>}
+              <th className="px-4 py-3 text-right font-semibold">{isAdjustment ? "Counted" : "Demand"}</th>
+              {isAdjustment && <th className="px-4 py-3 text-right font-semibold">Difference</th>}
+              {showAvailable && <th className="px-4 py-3 text-right font-semibold">Available</th>}
+              {showDone && <th className={clsx("px-4 py-3 text-right font-semibold", processing && "w-40")}>{doneLabel}</th>}
+              {isAdjustment && <th className="py-3 pr-6 pl-4 font-semibold">Reason</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ l, recorded, diff, short, processed, partial }) => (
               <tr key={l.id} className={clsx("border-b border-hairline last:border-0", short && "bg-bad-50/70")}>
                 <td className="py-3.5 pr-4 pl-6">
                   <Link to={`/products/${l.productId}`} className={clsx("font-semibold hover:underline", short && "text-bad")}>
@@ -897,12 +1169,67 @@ function LinesView({ doc }: { doc: DocumentDetail }) {
                     {fmtQty(l.available)} {l.product.uom}
                   </td>
                 )}
+                {showDone && (
+                  <td className={clsx("px-4 py-2 text-right whitespace-nowrap", partial && "font-semibold text-warn")}>
+                    {processing ? doneInput(l) : `${fmtQty(processed)} ${l.product.uom}`}
+                  </td>
+                )}
                 {isAdjustment && <td className="py-3.5 pr-6 pl-4 text-muted">{l.notes ?? "—"}</td>}
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+/** Asked when fewer items were processed than demanded — the Odoo-style backorder decision. */
+function BackorderModal({
+  doc,
+  shortfall,
+  onChoose,
+  onClose,
+  busy,
+}: {
+  doc: DocumentDetail;
+  shortfall: { name: string; remaining: number; uom: string }[];
+  onChoose: (backorder: boolean) => void;
+  onClose: () => void;
+  busy: boolean;
+}) {
+  const verb = doc.type === "receipt" ? "received" : doc.type === "delivery" ? "shipped" : "moved";
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Create a backorder?"
+      footer={
+        <>
+          <Button variant="ghost" disabled={busy} onClick={() => onChoose(false)}>
+            No backorder
+          </Button>
+          <Button variant="primary" loading={busy} onClick={() => onChoose(true)}>
+            Create backorder
+          </Button>
+        </>
+      }
+    >
+      <p className="text-[15px]">
+        You {verb} less than the demand on <span className="font-semibold">{doc.reference}</span>. Stock is updated for what was {verb}; the rest can
+        follow in a new document.
+      </p>
+      <ul className="mt-4 divide-y divide-hairline rounded-xl border border-hairline">
+        {shortfall.map((s) => (
+          <li key={s.name} className="flex justify-between px-4 py-3 text-sm">
+            <span className="font-medium">{s.name}</span>
+            <span className="font-semibold text-warn">
+              {fmtQty(s.remaining)} {s.uom} remaining
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-4 text-sm text-muted">Choose “No backorder” if the rest will never arrive (e.g. the supplier short-shipped for good).</p>
+    </Modal>
   );
 }

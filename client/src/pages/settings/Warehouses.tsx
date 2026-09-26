@@ -63,7 +63,7 @@ function WarehouseCard({ warehouse: w, canEdit, onEdit }: { warehouse: Warehouse
   const total = w.locations.reduce((sum, l) => sum + l.totalQuantity, 0);
 
   return (
-    <Card className="flex flex-col">
+    <Card className="flex min-w-0 flex-col">
       <div className="flex items-start gap-4 p-6">
         <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand">
           <WarehouseIcon className="size-6" strokeWidth={1.6} />

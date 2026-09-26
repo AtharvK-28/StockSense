@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowDownToLine, ArrowLeftRight, History, MapPin, SlidersHorizontal, Truck, Lock } from "lucide-react";
+import { ArrowDownToLine, ArrowLeftRight, History, MapPin, SlidersHorizontal, Truck, Lock, Barcode as BarcodeIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { ActivityFeed } from "../../components/ActivityFeed";
@@ -234,7 +234,16 @@ export function ProductPage() {
         }
         title={p.name}
         subtitle={`${p.category?.name ?? "Uncategorised"} · measured in ${p.uom}`}
-        actions={<StockBadge status={p.status} />}
+        actions={
+          <>
+            <StockBadge status={p.status} />
+            <Link to={`/products/labels?ids=${p.id}`}>
+              <Button size="sm" variant="subtle" icon={BarcodeIcon}>
+                Print label
+              </Button>
+            </Link>
+          </>
+        }
       />
 
       <div className="grid gap-8 lg:grid-cols-3">

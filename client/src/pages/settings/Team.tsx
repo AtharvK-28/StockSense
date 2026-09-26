@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Lock, Users } from "lucide-react";
 import { RolePill } from "../../components/Layout";
+import { ExportMenu } from "../../components/ExportMenu";
 import { Avatar, Card, EmptyState, PageHeader, Select, Skeleton } from "../../components/ui";
 import { api } from "../../lib/api";
 import { useAuth, useIsManager } from "../../lib/auth";
@@ -37,6 +38,7 @@ export function Team() {
         eyebrow="Settings"
         title="Team"
         subtitle="Everyone who can sign in. New sign-ups join as warehouse staff — promote the people who should manage the catalog, approve counts and configure warehouses."
+        actions={<ExportMenu dataset="team" />}
       />
       <Card>
         {!team.data ? (

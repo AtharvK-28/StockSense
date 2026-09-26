@@ -1,12 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { clsx } from "clsx";
-import { ArrowDownLeft, ArrowUpRight, ChevronLeft, ChevronRight, Download, History, KanbanSquare, List, MapPin, Package, Search, Tags, Warehouse } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, ChevronLeft, ChevronRight, History, KanbanSquare, List, MapPin, Package, Search, Tags, Warehouse } from "lucide-react";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { useToast } from "../components/toast";
+import { ExportMenu } from "../components/ExportMenu";
 import { ViewToggle } from "../components/DocumentTable";
-import { Button, Card, Chip, EmptyState, IconButton, PageHeader, SelectPill, Skeleton, StatusBadge } from "../components/ui";
-import { api, errorMessage, qs } from "../lib/api";
+import { Card, Chip, EmptyState, IconButton, PageHeader, SelectPill, Skeleton, StatusBadge } from "../components/ui";
+import { api, qs } from "../lib/api";
 import { MOVE_LABEL, docPath, fmtDateTime, fmtQty, fmtSigned, moveRoute } from "../lib/format";
 import { useCategories, useDebounced, useLocations, useProducts, useWarehouses } from "../lib/queries";
 import type { LedgerEntry, MoveType } from "../lib/types";
@@ -43,8 +43,6 @@ export function MoveHistory() {
   const search = useDebounced(q.trim());
   const warehouses = useWarehouses();
   const categories = useCategories();
-  const toast = useToast();
-  const [exporting, setExporting] = useState(false);
 
   const filters = { productId, q: search, type, warehouseId, locationId, categoryId, from, to };
   const ledger = useQuery({
@@ -57,28 +55,6 @@ export function MoveHistory() {
     setPage(1);
   };
 
-  const exportCsv = async () => {
-    setExporting(true);
-    try {
-      const data = await api<LedgerPage>(`/ledger${qs({ ...filters, page: 1, pageSize: 500 })}`);
-      const header = ["Date", "Reference", "Operation", "Product", "SKU", "From", "To", "Change", "Unit", "Balance after", "By"];
-      const rows = data.items.map((m) => {
-        const r = moveRoute(m);
-        return [new Date(m.createdAt).toISOString(), m.document.reference, MOVE_LABEL[m.operationType], m.product.name, m.product.sku, r.from, r.to, m.quantityDelta, m.product.uom, m.balanceAfter, m.performedBy.name];
-      });
-      const csv = [header, ...rows].map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\n");
-      const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-      const a = Object.assign(document.createElement("a"), { href: url, download: `stock-ledger-${new Date().toISOString().slice(0, 10)}.csv` });
-      a.click();
-      URL.revokeObjectURL(url);
-      toast({ title: `Exported ${data.items.length} moves`, description: data.total > 500 ? "Only the latest 500 matching moves were included." : undefined });
-    } catch (err) {
-      toast({ title: errorMessage(err), tone: "error" });
-    } finally {
-      setExporting(false);
-    }
-  };
-
   const total = ledger.data?.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -88,9 +64,7 @@ export function MoveHistory() {
         title="Move history"
         subtitle="The stock ledger — every movement, who made it, and the balance after. Entries are append-only."
         actions={
-          <Button variant="subtle" icon={Download} onClick={exportCsv} loading={exporting} disabled={!total}>
-            Export CSV
-          </Button>
+          <ExportMenu dataset="moves" params={{ productId, q: search, type, warehouseId, locationId, categoryId, from, to }} disabled={!total} />
         }
       />
 

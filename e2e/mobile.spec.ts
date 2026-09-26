@@ -3,7 +3,7 @@ import { login } from "./helpers";
 
 // Runs in the "mobile" project (Pixel 7 viewport).
 
-const PAGES = ["/", "/operations/deliveries", "/operations/receipts", "/stock", "/products", "/analytics", "/moves", "/settings/warehouses", "/profile"];
+const PAGES = ["/", "/operations/deliveries", "/operations/receipts", "/stock", "/products", "/products/categories", "/analytics", "/moves", "/settings/warehouses", "/settings/export", "/profile"];
 
 test("no page scrolls sideways on a phone", async ({ page }) => {
   await login(page);

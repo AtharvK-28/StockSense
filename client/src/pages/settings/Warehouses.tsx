@@ -1,11 +1,46 @@
-import { Check, MapPin, Pencil, Plus, Warehouse as WarehouseIcon, X } from "lucide-react";
+import { Check, ExternalLink, LocateFixed, MapPin, MapPinned, Navigation, Pencil, Plus, Search, Warehouse as WarehouseIcon, X } from "lucide-react";
 import { useState } from "react";
+import { ExportMenu } from "../../components/ExportMenu";
 import { Button, Card, EmptyState, ErrorNote, Field, IconButton, Input, Modal, PageHeader, Skeleton } from "../../components/ui";
 import { api, errorMessage } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { fmtQty } from "../../lib/format";
+import { type Pin, currentPosition, directionsUrl, embedUrl, geocode, openMapUrl, parsePin, round6 } from "../../lib/maps";
 import { useAction, useWarehouses } from "../../lib/queries";
 import type { Warehouse } from "../../lib/types";
+
+const pinOf = (w: { latitude: number | null; longitude: number | null }): Pin | null =>
+  w.latitude != null && w.longitude != null ? { lat: w.latitude, lng: w.longitude } : null;
+
+/** OpenStreetMap preview with a marker. Loads only when scrolled into view. */
+function MapFrame({ pin, title, className }: { pin: Pin; title: string; className?: string }) {
+  return (
+    <iframe
+      title={title}
+      src={embedUrl(pin)}
+      loading="lazy"
+      referrerPolicy="strict-origin-when-cross-origin"
+      className={`map-frame block w-full border-0 bg-canvas ${className ?? ""}`}
+    />
+  );
+}
+
+function MapLinks({ pin, address }: { pin: Pin | null; address: string | null }) {
+  if (!pin && !address) return null;
+  const link = "inline-flex h-9 items-center gap-1.5 rounded-full border border-line px-3.5 text-sm font-semibold transition hover:border-ink";
+  return (
+    <div className="flex flex-wrap gap-2">
+      <a href={directionsUrl(pin, address)} target="_blank" rel="noreferrer" className={link}>
+        <Navigation className="size-3.5" /> Directions
+      </a>
+      {pin && (
+        <a href={openMapUrl(pin)} target="_blank" rel="noreferrer" className={link}>
+          <ExternalLink className="size-3.5" /> Open map
+        </a>
+      )}
+    </div>
+  );
+}
 
 export function Warehouses() {
   const { user } = useAuth();
@@ -20,11 +55,14 @@ export function Warehouses() {
         title="Warehouses"
         subtitle="Your physical sites and the locations inside them — racks, zones and floors."
         actions={
-          canEdit && (
-            <Button variant="primary" icon={Plus} onClick={() => setEditing("new")}>
-              New warehouse
-            </Button>
-          )
+          <>
+            <ExportMenu dataset="locations" />
+            {canEdit && (
+              <Button variant="primary" icon={Plus} onClick={() => setEditing("new")}>
+                New warehouse
+              </Button>
+            )}
+          </>
         }
       />
       {!canEdit && (
@@ -61,9 +99,23 @@ function WarehouseCard({ warehouse: w, canEdit, onEdit }: { warehouse: Warehouse
   const add = useAction((n: string) => api(`/warehouses/${w.id}/locations`, { method: "POST", body: { name: n } }), { success: "Location added" });
   const rename = useAction((l: { id: string; name: string }) => api(`/locations/${l.id}`, { method: "PUT", body: { name: l.name } }), { success: "Location renamed" });
   const total = w.locations.reduce((sum, l) => sum + l.totalQuantity, 0);
+  const pin = pinOf(w);
 
   return (
-    <Card className="flex min-w-0 flex-col">
+    <Card className="flex min-w-0 flex-col overflow-hidden">
+      {pin ? (
+        <MapFrame pin={pin} title={`Map of ${w.name}`} className="h-44" />
+      ) : (
+        canEdit && (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="flex h-16 items-center justify-center gap-2 border-b border-dashed border-line bg-canvas/60 text-sm font-semibold text-muted transition hover:text-ink"
+          >
+            <MapPinned className="size-4" /> Pin this warehouse on the map
+          </button>
+        )
+      )}
       <div className="flex items-start gap-4 p-6">
         <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand">
           <WarehouseIcon className="size-6" strokeWidth={1.6} />
@@ -78,6 +130,9 @@ function WarehouseCard({ warehouse: w, canEdit, onEdit }: { warehouse: Warehouse
             <span className="font-semibold">{w.locations.length}</span> <span className="text-muted">locations ·</span> <span className="font-semibold">{fmtQty(total)}</span>{" "}
             <span className="text-muted">units on hand</span>
           </p>
+          <div className="mt-3">
+            <MapLinks pin={pin} address={w.address} />
+          </div>
         </div>
         {canEdit && <IconButton icon={Pencil} label={`Edit ${w.name}`} onClick={onEdit} />}
       </div>
@@ -129,11 +184,41 @@ function WarehouseCard({ warehouse: w, canEdit, onEdit }: { warehouse: Warehouse
 
 function WarehouseModal({ warehouse, onClose }: { warehouse: Warehouse | null; onClose: () => void }) {
   const [form, setForm] = useState({ name: warehouse?.name ?? "", code: warehouse?.code ?? "", address: warehouse?.address ?? "" });
+  const [pin, setPin] = useState<Pin | null>(warehouse ? pinOf(warehouse) : null);
+  const [pinText, setPinText] = useState(pin ? `${pin.lat}, ${pin.lng}` : "");
+  const [locating, setLocating] = useState<"search" | "gps" | null>(null);
+  const [pinNote, setPinNote] = useState<{ tone: "ok" | "bad"; text: string } | null>(null);
+
+  const choosePin = (next: Pin | null, note?: string) => {
+    const rounded = next && { lat: round6(next.lat), lng: round6(next.lng) };
+    setPin(rounded);
+    setPinText(rounded ? `${rounded.lat}, ${rounded.lng}` : "");
+    setPinNote(note ? { tone: "ok", text: note } : null);
+  };
+  const locate = async (how: "search" | "gps") => {
+    setLocating(how);
+    setPinNote(null);
+    try {
+      if (how === "gps") choosePin(await currentPosition(), "Pinned to where you are now.");
+      else {
+        const hit = await geocode(form.address);
+        if (hit) choosePin(hit, `Found: ${hit.label}`);
+        else setPinNote({ tone: "bad", text: "No match for that address. Try adding the city, or paste a map link." });
+      }
+    } catch (err) {
+      setPinNote({ tone: "bad", text: (err as Error).message });
+    } finally {
+      setLocating(null);
+    }
+  };
+  const pinTextInvalid = pinText.trim() !== "" && !parsePin(pinText);
+
+  const body = { ...form, latitude: pin?.lat ?? null, longitude: pin?.lng ?? null };
   const save = useAction(
     () =>
       warehouse
-        ? api(`/warehouses/${warehouse.id}`, { method: "PUT", body: form })
-        : api("/warehouses", { method: "POST", body: form }),
+        ? api(`/warehouses/${warehouse.id}`, { method: "PUT", body })
+        : api("/warehouses", { method: "POST", body }),
     { success: warehouse ? "Warehouse updated" : "Warehouse created" },
   );
   return (
@@ -146,7 +231,7 @@ function WarehouseModal({ warehouse, onClose }: { warehouse: Warehouse | null; o
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" form="warehouse-form" loading={save.isPending}>
+          <Button type="submit" form="warehouse-form" loading={save.isPending} disabled={pinTextInvalid}>
             {warehouse ? "Save" : "Create warehouse"}
           </Button>
         </>
@@ -169,6 +254,48 @@ function WarehouseModal({ warehouse, onClose }: { warehouse: Warehouse | null; o
         <Field label="Address" className="sm:col-span-3">
           <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Optional" />
         </Field>
+        <div className="rounded-xl bg-canvas p-4 sm:col-span-3">
+          <p className="text-sm font-semibold">Map pin</p>
+          <p className="mt-0.5 text-[13px] text-muted">Shows the site on a map and gives everyone one-tap directions.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" icon={Search} loading={locating === "search"} disabled={!form.address.trim() || !!locating} onClick={() => locate("search")}>
+              Find the address
+            </Button>
+            <Button size="sm" variant="outline" icon={LocateFixed} loading={locating === "gps"} disabled={!!locating} onClick={() => locate("gps")}>
+              I'm here now
+            </Button>
+            {pin && (
+              <Button size="sm" variant="ghost" icon={X} onClick={() => choosePin(null)}>
+                Remove pin
+              </Button>
+            )}
+          </div>
+          <Field
+            label="Or paste coordinates or a map link"
+            className="mt-3"
+            error={pinTextInvalid ? "Couldn't read a location from that. Paste “18.52, 73.85” or a Google Maps / OpenStreetMap link." : null}
+          >
+            <Input
+              value={pinText}
+              onChange={(e) => {
+                setPinText(e.target.value);
+                const parsed = parsePin(e.target.value);
+                if (parsed) setPin({ lat: round6(parsed.lat), lng: round6(parsed.lng) });
+                else if (!e.target.value.trim()) setPin(null);
+                setPinNote(null);
+              }}
+              placeholder="18.6298, 73.8478"
+              className="h-10 bg-white font-mono text-sm"
+            />
+          </Field>
+          {pinNote && <p className={`mt-2 text-[13px] ${pinNote.tone === "ok" ? "text-ok" : "text-bad"}`}>{pinNote.text}</p>}
+          {pin && !pinNote && !pinTextInvalid && pinText !== `${pin.lat}, ${pin.lng}` && (
+            <p className="mt-2 text-[13px] text-ok">
+              Pinned at {pin.lat}, {pin.lng}
+            </p>
+          )}
+          {pin && <MapFrame pin={pin} title="Map preview" className="mt-3 h-44 rounded-lg" />}
+        </div>
         {!warehouse && <p className="text-sm text-muted sm:col-span-3">A default “Stock” location is created automatically.</p>}
         {save.isError && <div className="sm:col-span-3"><ErrorNote>{errorMessage(save.error)}</ErrorNote></div>}
       </form>

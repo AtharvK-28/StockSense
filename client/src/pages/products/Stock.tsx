@@ -3,7 +3,9 @@ import { clsx } from "clsx";
 import { Boxes, PencilLine, Search, Tags, Warehouse } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
+import { ExportMenu } from "../../components/ExportMenu";
 import { LocationSelect } from "../../components/pickers";
+import { ProductImage } from "../../components/ProductImage";
 import { Button, Card, EmptyState, ErrorNote, Field, Input, Modal, PageHeader, SelectPill, Skeleton, StockBadge } from "../../components/ui";
 import { useToast } from "../../components/toast";
 import { api, errorMessage } from "../../lib/api";
@@ -35,7 +37,18 @@ export function Stock() {
 
   return (
     <div>
-      <PageHeader title="Stock" subtitle="What's on hand, what's promised to open deliveries, and what's free to use. Updating a count logs an adjustment in the ledger." />
+      <PageHeader
+        title="Stock"
+        subtitle="What's on hand, what's promised to open deliveries, and what's free to use. Updating a count logs an adjustment in the ledger."
+        actions={
+          <ExportMenu
+            sets={[
+              { dataset: "products", label: "Per product (this table)", params: { q: search, warehouseId, categoryId } },
+              { dataset: "stock", label: "Per location", params: { q: search, warehouseId, categoryId } },
+            ]}
+          />
+        }
+      />
 
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
         {[
@@ -89,6 +102,7 @@ export function Stock() {
           <ul className="divide-y divide-hairline sm:hidden">
             {items.map((p) => (
               <li key={p.id} className="flex items-center gap-3 px-5 py-4">
+                <ProductImage product={p} className="size-12 rounded-lg" />
                 <div className="min-w-0 flex-1">
                   <Link to={`/products/${p.id}`} className="font-semibold">
                     {p.name}
@@ -125,10 +139,15 @@ export function Stock() {
                 {items.map((p) => (
                   <tr key={p.id} className="border-b border-hairline last:border-0 hover:bg-canvas/60">
                     <td className="py-3.5 pr-4 pl-6">
-                      <Link to={`/products/${p.id}`} className="font-semibold hover:underline">
-                        {p.name}
-                      </Link>
-                      <div className="font-mono text-xs text-muted">{p.sku}</div>
+                      <div className="flex items-center gap-3">
+                        <ProductImage product={p} className="size-10 rounded-lg" />
+                        <div className="min-w-0">
+                          <Link to={`/products/${p.id}`} className="font-semibold hover:underline">
+                            {p.name}
+                          </Link>
+                          <div className="font-mono text-xs text-muted">{p.sku}</div>
+                        </div>
+                      </div>
                     </td>
                     <td className="px-4 py-3.5 text-right whitespace-nowrap">{fmtMoney(p.unitCost)}</td>
                     <td className="px-4 py-3.5 text-right font-semibold whitespace-nowrap">

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Lock, ScrollText, Search } from "lucide-react";
 import { useState } from "react";
+import { ExportMenu } from "../../components/ExportMenu";
 import { Card, Chip, EmptyState, IconButton, PageHeader, Skeleton } from "../../components/ui";
 import { api, qs } from "../../lib/api";
 import { useIsManager } from "../../lib/auth";
@@ -53,6 +54,7 @@ export function AuditLog() {
         eyebrow="Settings"
         title="Audit log"
         subtitle="Who changed what outside the stock ledger — catalog, costs, rules, warehouses, roles, settings and document lifecycle. Stock movements themselves are in Move history."
+        actions={<ExportMenu dataset="audit" />}
       />
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <label className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-full border border-line bg-white px-4 transition focus-within:border-ink focus-within:ring-1 focus-within:ring-ink sm:max-w-sm">

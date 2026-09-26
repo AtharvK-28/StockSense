@@ -2,12 +2,13 @@ import { clsx } from "clsx";
 import { Barcode, LayoutGrid, List, Package, Plus, Search, Tags, Warehouse } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
+import { ExportMenu } from "../../components/ExportMenu";
 import { Button, Card, Chip, EmptyState, IconButton, PageHeader, SelectPill, Skeleton, StockBadge } from "../../components/ui";
 import { useIsManager } from "../../lib/auth";
 import { fmtQty } from "../../lib/format";
 import { useCategories, useDebounced, useProducts, useWarehouses } from "../../lib/queries";
 import type { ProductRow } from "../../lib/types";
-import { categoryVisual } from "../../lib/visual";
+import { ProductImage } from "../../components/ProductImage";
 
 const STOCK_FILTERS = [
   { key: "", label: "All" },
@@ -73,6 +74,7 @@ export function ProductList() {
         subtitle={items ? `${items.length} product${items.length === 1 ? "" : "s"}${search ? ` matching “${search}”` : ""}` : "Loading…"}
         actions={
           <>
+            <ExportMenu dataset="products" params={{ q: search, categoryId, warehouseId, stock }} />
             <Link to="/products/labels">
               <Button variant="subtle" icon={Barcode}>
                 Print labels
@@ -175,11 +177,10 @@ export function ProductList() {
 }
 
 function ProductCard({ product: p }: { product: ProductRow }) {
-  const visual = categoryVisual(p.category?.name);
   return (
     <Link to={`/products/${p.id}`} className="group block">
-      <div className="relative grid aspect-[4/3] place-items-center overflow-hidden rounded-xl" style={{ background: visual.bg }}>
-        <visual.icon className="size-16 transition duration-300 group-hover:scale-110" style={{ color: visual.fg }} strokeWidth={1.25} />
+      <div className="relative overflow-hidden rounded-xl">
+        <ProductImage product={p} className="aspect-[4/3] w-full" iconClassName="size-16" imgClassName="transition duration-300 group-hover:scale-105" />
         <span className="absolute top-3 left-3">
           <StockBadge status={p.status} floating />
         </span>
@@ -219,14 +220,11 @@ function ProductTable({ products }: { products: ProductRow[] }) {
           </thead>
           <tbody>
             {products.map((p) => {
-              const visual = categoryVisual(p.category?.name);
               return (
                 <tr key={p.id} onClick={() => navigate(`/products/${p.id}`)} className="cursor-pointer border-b border-hairline last:border-0 hover:bg-canvas/70">
                   <td className="py-3 pr-4 pl-6">
                     <div className="flex items-center gap-3">
-                      <span className="grid size-10 shrink-0 place-items-center rounded-lg" style={{ background: visual.bg }}>
-                        <visual.icon className="size-5" style={{ color: visual.fg }} strokeWidth={1.5} />
-                      </span>
+                      <ProductImage product={p} className="size-10 rounded-lg" />
                       <span className="font-semibold">{p.name}</span>
                     </div>
                   </td>

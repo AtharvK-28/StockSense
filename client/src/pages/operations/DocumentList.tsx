@@ -3,6 +3,7 @@ import { Inbox, KanbanSquare, List, Plus, Search, Warehouse } from "lucide-react
 import { useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import { DocumentKanban, DocumentTable, ViewToggle } from "../../components/DocumentTable";
+import { ExportMenu } from "../../components/ExportMenu";
 import { Button, Card, Chip, EmptyState, PageHeader, SelectPill, Skeleton } from "../../components/ui";
 import { api, qs } from "../../lib/api";
 import { STATUS_LABEL, docTypeBySlug, isOpen } from "../../lib/format";
@@ -46,6 +47,13 @@ export function DocumentList() {
     return <EmptyState icon={Inbox} title="Unknown operation type" />;
   }
 
+  // The export follows the list: same type, warehouse, search and status chip.
+  const exportParams = {
+    type: meta.type,
+    warehouseId,
+    q: search,
+    status: status === "all" ? undefined : status === "open" ? "draft,waiting,ready" : status,
+  };
   const visible = (docs.data ?? []).filter((d) => (status === "all" ? true : status === "open" ? isOpen(d.status) : d.status === status));
 
   return (
@@ -55,11 +63,19 @@ export function DocumentList() {
         title={meta.plural}
         subtitle={meta.blurb}
         actions={
-          <Link to={`/operations/${meta.slug}/new`}>
-            <Button variant="primary" icon={Plus}>
-              New {meta.label.toLowerCase()}
-            </Button>
-          </Link>
+          <>
+            <ExportMenu
+              sets={[
+                { dataset: "documents", label: meta.plural, params: exportParams },
+                { dataset: "document-lines", label: "With product lines", params: exportParams },
+              ]}
+            />
+            <Link to={`/operations/${meta.slug}/new`}>
+              <Button variant="primary" icon={Plus}>
+                New {meta.label.toLowerCase()}
+              </Button>
+            </Link>
+          </>
         }
       />
 

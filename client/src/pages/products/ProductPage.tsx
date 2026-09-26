@@ -1,15 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDownToLine, ArrowLeftRight, History, MapPin, SlidersHorizontal, Truck, Lock, Barcode as BarcodeIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { ActivityFeed } from "../../components/ActivityFeed";
+import { PhotoPicker } from "../../components/ProductImage";
 import { Button, Card, CardHeader, EmptyState, ErrorNote, Field, Input, PageHeader, Select, Skeleton, StockBadge } from "../../components/ui";
 import { api, errorMessage } from "../../lib/api";
 import { docPath, fmtMoney, fmtQty, fmtRelative } from "../../lib/format";
 import { useIsManager } from "../../lib/auth";
 import { useAction, useCategories, useLocations } from "../../lib/queries";
 import type { DocumentDetail, LedgerEntry, ProductDetail } from "../../lib/types";
-import { UOM_OPTIONS, categoryVisual } from "../../lib/visual";
+import { UOM_OPTIONS } from "../../lib/visual";
 
 interface FormState {
   name: string;
@@ -34,6 +35,12 @@ export function ProductPage() {
   const locations = useLocations();
   const [form, setForm] = useState<FormState>(emptyForm);
   const [dirty, setDirty] = useState(false);
+  // New products: the photo chosen before the product exists, uploaded right after it's created.
+  const [photo, setPhoto] = useState<Blob | null>(null);
+  const photoPreview = useMemo(() => (photo ? URL.createObjectURL(photo) : null), [photo]);
+  useEffect(() => () => {
+    if (photoPreview) URL.revokeObjectURL(photoPreview);
+  }, [photoPreview]);
 
   const detail = useQuery({
     queryKey: ["product", id],
@@ -86,15 +93,21 @@ export function ProductPage() {
     { success: isNew ? "Product created" : "Changes saved" },
   );
 
+  const uploadPhoto = useAction((blob: Blob) => api(`/products/${id}/image`, { method: "PUT", body: blob }), { success: "Photo updated" });
+  const removePhoto = useAction(() => api(`/products/${id}/image`, { method: "DELETE" }), { success: "Photo removed" });
+
   const replenish = useAction(() => api<{ document: DocumentDetail }>(`/products/${id}/replenish`, { method: "POST", body: {} }));
   const isManager = useIsManager();
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     save.mutate(undefined, {
-      onSuccess: ({ product: saved }) => {
+      onSuccess: async ({ product: saved }) => {
         setDirty(false);
-        if (isNew) navigate(`/products/${saved.id}`, { replace: true });
+        if (isNew) {
+          if (photo) await api(`/products/${saved.id}/image`, { method: "PUT", body: photo }).catch(() => undefined);
+          navigate(`/products/${saved.id}`, { replace: true });
+        }
       },
     });
   };
@@ -118,7 +131,7 @@ export function ProductPage() {
     );
   }
 
-  const visual = categoryVisual(product?.category?.name ?? categories.data?.find((c) => c.id === form.categoryId)?.name);
+  const categoryName = product?.category?.name ?? categories.data?.find((c) => c.id === form.categoryId)?.name;
   const initialInvalid = !!form.initialQty && !form.initialLocationId;
 
   const detailsForm = (
@@ -189,13 +202,21 @@ export function ProductPage() {
       <div className="mx-auto max-w-3xl">
         <PageHeader eyebrow={<Link to="/products" className="hover:underline">Products</Link>} title="New product" subtitle="Add an item to your catalog. Stock is tracked per location." />
         <Card className="p-6 sm:p-8">
-          <div className="mb-6 flex items-center gap-4">
-            <span className="grid size-16 place-items-center rounded-xl" style={{ background: visual.bg }}>
-              <visual.icon className="size-8" style={{ color: visual.fg }} strokeWidth={1.4} />
-            </span>
-            <div>
+          <div className="mb-8 flex flex-col gap-5 sm:flex-row sm:items-start">
+            <PhotoPicker
+              className="w-40 shrink-0"
+              product={{ name: form.name, category: categoryName ? { name: categoryName } : null }}
+              previewUrl={photoPreview}
+              editable
+              onPick={setPhoto}
+              onRemove={() => setPhoto(null)}
+            />
+            <div className="min-w-0">
               <p className="font-semibold">{form.name || "Untitled product"}</p>
               <p className="font-mono text-sm text-muted">{form.sku.toUpperCase() || "SKU"}</p>
+              <p className="mt-3 max-w-sm text-[13px] text-muted">
+                A photo helps staff pick the right item. JPEG, PNG or WebP; drop a file on the tile or tap to take one with your phone.
+              </p>
             </div>
           </div>
           {detailsForm}
@@ -320,8 +341,18 @@ export function ProductPage() {
           </Card>
         </div>
 
-        <aside className="lg:sticky lg:top-28 lg:self-start">
-          <Card className="p-6 shadow-pop">
+        <aside className="space-y-6">
+          <Card className="p-4">
+            <PhotoPicker
+              aspect="aspect-[4/3]"
+              product={p}
+              editable={isManager}
+              busy={uploadPhoto.isPending || removePhoto.isPending}
+              onPick={(blob) => uploadPhoto.mutate(blob)}
+              onRemove={() => removePhoto.mutate(undefined)}
+            />
+          </Card>
+          <Card className="p-6 shadow-pop lg:sticky lg:top-28">
             <p className="text-sm text-muted">Total on hand</p>
             <p className="mt-1 text-[40px] leading-none font-semibold tracking-tight">
               {fmtQty(p.onHand)} <span className="text-lg font-medium text-muted">{p.uom}</span>

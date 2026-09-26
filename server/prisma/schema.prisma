@@ -49,6 +49,8 @@ model User {
   passwordHash String   @map("password_hash")
   role         Role     @default(staff)
   createdAt    DateTime @default(now()) @map("created_at")
+  totpSecret   String?  @map("totp_secret")
+  totpEnabled  Boolean  @default(false) @map("totp_enabled")
 
   otpCodes      OtpCode[]
   createdDocs   Document[]     @relation("DocCreatedBy")

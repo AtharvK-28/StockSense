@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Check, Lock, LogOut, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
@@ -32,6 +32,9 @@ export function Profile() {
   });
   const [details, setDetails] = useState({ name: user?.name ?? "", email: user?.email ?? "" });
   const [pw, setPw] = useState({ currentPassword: "", newPassword: "" });
+  const [twoFactorPassword, setTwoFactorPassword] = useState("");
+  const [twoFactorCode, setTwoFactorCode] = useState("");
+  const [setup, setSetup] = useState<{ qrCode: string; secret: string } | null>(null);
 
   useEffect(() => {
     if (user) setDetails({ name: user.name, email: user.email });
@@ -39,6 +42,18 @@ export function Profile() {
 
   const saveDetails = useAction(() => api<{ user: User }>("/profile", { method: "PUT", body: details }), { success: "Profile updated" });
   const savePassword = useAction(() => api("/profile/password", { method: "PUT", body: pw }), { success: "Password changed" });
+  const beginTwoFactor = useMutation({
+    mutationFn: () => api<{ qrCode: string; secret: string }>("/profile/2fa/setup", { method: "POST", body: { currentPassword: twoFactorPassword } }),
+    onSuccess: (result) => setSetup(result),
+  });
+  const confirmTwoFactor = useMutation({
+    mutationFn: () => api<{ user: User }>("/profile/2fa/confirm", { method: "POST", body: { code: twoFactorCode } }),
+    onSuccess: ({ user: updated }) => { setUser(updated); setSetup(null); setTwoFactorCode(""); setTwoFactorPassword(""); },
+  });
+  const disableTwoFactor = useMutation({
+    mutationFn: () => api<{ user: User }>("/profile/2fa", { method: "DELETE", body: { currentPassword: twoFactorPassword, code: twoFactorCode } }),
+    onSuccess: ({ user: updated }) => { setUser(updated); setTwoFactorCode(""); setTwoFactorPassword(""); },
+  });
 
   if (!user) return null;
   const stats = profile.data?.stats;
@@ -153,6 +168,36 @@ export function Profile() {
                 </Button>
               </div>
             </form>
+          </Card>
+
+          <Card className="p-6">
+            <h2 className="text-lg font-semibold tracking-tight">Two-step verification</h2>
+            <p className="mt-1 text-sm text-muted">Protect sign-in with a code from Google Authenticator or another TOTP app.</p>
+            {user.totpEnabled ? (
+              <form className="mt-5 grid gap-5 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); disableTwoFactor.mutate(); }}>
+                <Field label="Current password"><Input type="password" required value={twoFactorPassword} onChange={(e) => setTwoFactorPassword(e.target.value)} /></Field>
+                <Field label="Authenticator code"><Input inputMode="numeric" autoComplete="one-time-code" required value={twoFactorCode} onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, "").slice(0, 6))} /></Field>
+                {disableTwoFactor.isError && <div className="sm:col-span-2"><ErrorNote>{errorMessage(disableTwoFactor.error)}</ErrorNote></div>}
+                <div className="flex justify-end sm:col-span-2"><Button type="submit" variant="outline" loading={disableTwoFactor.isPending} disabled={twoFactorCode.length !== 6 || !twoFactorPassword}>Disable two-step verification</Button></div>
+              </form>
+            ) : setup ? (
+              <div className="mt-5 grid gap-5 sm:grid-cols-[240px_1fr] sm:items-start">
+                <img src={setup.qrCode} alt="Scan this QR code with your authenticator app" className="size-60 rounded-lg border border-hairline p-2" />
+                <form className="space-y-5" onSubmit={(e) => { e.preventDefault(); confirmTwoFactor.mutate(); }}>
+                  <p className="text-sm text-muted">Scan the QR code, then enter the current 6-digit code to finish setup.</p>
+                  <p className="break-all rounded-lg bg-soft p-3 font-mono text-xs">Manual key: {setup.secret}</p>
+                  <Field label="Authenticator code"><Input inputMode="numeric" autoComplete="one-time-code" required value={twoFactorCode} onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, "").slice(0, 6))} /></Field>
+                  {confirmTwoFactor.isError && <ErrorNote>{errorMessage(confirmTwoFactor.error)}</ErrorNote>}
+                  <Button type="submit" loading={confirmTwoFactor.isPending} disabled={twoFactorCode.length !== 6}>Confirm setup</Button>
+                </form>
+              </div>
+            ) : (
+              <form className="mt-5 flex flex-col gap-5 sm:flex-row sm:items-end" onSubmit={(e) => { e.preventDefault(); beginTwoFactor.mutate(); }}>
+                <Field label="Current password" className="flex-1"><Input type="password" required value={twoFactorPassword} onChange={(e) => setTwoFactorPassword(e.target.value)} /></Field>
+                {beginTwoFactor.isError && <ErrorNote>{errorMessage(beginTwoFactor.error)}</ErrorNote>}
+                <Button type="submit" loading={beginTwoFactor.isPending} disabled={!twoFactorPassword}>Set up authenticator</Button>
+              </form>
+            )}
           </Card>
         </div>
       </div>

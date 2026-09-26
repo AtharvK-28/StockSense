@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
 import { prisma } from "../src/db";
 import { resetDatabase } from "./helpers";
+import speakeasy from "speakeasy";
 
 let server: Server;
 let base: string;
@@ -90,5 +91,31 @@ describe("auth", () => {
     expect((await post("/auth/login", { login: "rakesh01", password: "NewPass@123" })).status).toBe(200);
     const stored = await prisma.otpCode.findFirstOrThrow();
     expect(stored.codeHash).not.toBe(code);
+  });
+
+  it("enables TOTP and requires it for subsequent logins", async () => {
+    const signup = await post("/auth/signup", { loginId: "totpuser", email: "totp@test.dev", password: "Secret@123" });
+    const setup = await post("/profile/2fa/setup", { currentPassword: "Secret@123" }, signup.cookie);
+    expect(setup.status).toBe(200);
+    expect(setup.body.qrCode).toMatch(/^data:image\/png;base64,/);
+    const secret: string = setup.body.secret;
+    const code = speakeasy.totp({ secret, encoding: "base32" });
+    const confirmed = await post("/profile/2fa/confirm", { code }, signup.cookie);
+    expect(confirmed.status).toBe(200);
+    expect(confirmed.body.user.totpEnabled).toBe(true);
+
+    const login = await post("/auth/login", { login: "totpuser", password: "Secret@123" });
+    expect(login.status).toBe(202);
+    expect(login.body.requiresTwoFactor).toBe(true);
+    const verified = await post("/auth/login/2fa", { challenge: login.body.challenge, code: speakeasy.totp({ secret, encoding: "base32" }) });
+    expect(verified.status).toBe(200);
+    expect(verified.cookie).toMatch(/^ss_session=/);
+
+    const disabled = await fetch(`${base}/profile/2fa`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", Cookie: verified.cookie! },
+      body: JSON.stringify({ currentPassword: "Secret@123", code: speakeasy.totp({ secret, encoding: "base32" }) }),
+    });
+    expect(disabled.status).toBe(200);
   });
 });

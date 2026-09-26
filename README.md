@@ -44,6 +44,7 @@ Single-process mode: `npm run build && npm start` serves the app and API togethe
 ## Features
 
 - **Auth:** sign up with a unique Login ID (6–12 chars), email and a strong password (upper + lower case, special character, more than 8 characters); log in with the Login ID (httpOnly JWT cookie); 5 failed logins lock the account for 15 minutes; OTP password reset (6-digit, hashed, single-use, 10-minute expiry, rate-limited). Set `OTP_DEV_ECHO=true` to show the code on screen for demos; configure `SMTP_*` to email it.
+- **Two-step verification:** users can enable TOTP from My Profile by scanning a QR code with Google Authenticator; login then requires the rotating 6-digit code.
 - **Dashboard:** live KPIs (Receipt/Delivery cards with to-process, late and waiting counts; products in stock; low/out of stock; scheduled transfers), filterable by document type, status, warehouse, location and category; low-stock alerts with one-click reorder; counts awaiting approval; recent ledger activity.
 - **Analytics:** stock value over time, received vs shipped per day, value by category, top movers with days of cover, dead stock, turnover — all replayed from the ledger. **Valuation report** by product, location or category with CSV export and print/PDF.
 - **Products:** create/update with SKU, category, unit of measure, per-unit cost, a photo (upload, drag-drop or phone camera; resized in the browser, stored in PostgreSQL) and optional opening stock; stock per location; incoming/outgoing forecast; categories that open to show their products; reordering rules (min/max).

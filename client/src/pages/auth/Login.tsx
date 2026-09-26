@@ -17,9 +17,24 @@ export function Login() {
   const from = (location.state as { from?: string } | null)?.from ?? "/";
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
+  const [challenge, setChallenge] = useState<string | null>(null);
+  const [code, setCode] = useState("");
 
   const signIn = useMutation({
-    mutationFn: (body: { login: string; password: string }) => api<{ user: User }>("/auth/login", { method: "POST", body }),
+    mutationFn: (body: { login: string; password: string }) => api<{ user?: User; requiresTwoFactor?: boolean; challenge?: string }>("/auth/login", { method: "POST", body }),
+    onSuccess: (result) => {
+      if (result.requiresTwoFactor && result.challenge) {
+        setChallenge(result.challenge);
+        return;
+      }
+      if (result.user) {
+        setUser(result.user);
+        navigate(from, { replace: true });
+      }
+    },
+  });
+  const verifyTwoFactor = useMutation({
+    mutationFn: () => api<{ user: User }>("/auth/login/2fa", { method: "POST", body: { challenge, code } }),
     onSuccess: ({ user }) => {
       setUser(user);
       navigate(from, { replace: true });
@@ -31,7 +46,23 @@ export function Login() {
       title="Log in"
       heading="Welcome back to StockSense"
     >
-      <form
+      {challenge ? <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          verifyTwoFactor.mutate();
+        }}
+        className="space-y-4"
+      >
+        <p className="text-sm text-muted">Enter the 6-digit code from your authenticator app.</p>
+        <FloatingInput label="Authenticator code" inputMode="numeric" autoComplete="one-time-code" required value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} />
+        {verifyTwoFactor.isError && <ErrorNote>{errorMessage(verifyTwoFactor.error)}</ErrorNote>}
+        <Button type="submit" variant="primary" size="lg" className="w-full" loading={verifyTwoFactor.isPending} disabled={code.length !== 6}>
+          Verify code
+        </Button>
+        <button type="button" className="w-full text-center text-sm font-semibold underline" onClick={() => { setChallenge(null); setCode(""); }}>
+          Use a different account
+        </button>
+      </form> : <form
         onSubmit={(e) => {
           e.preventDefault();
           signIn.mutate({ login, password });
@@ -56,7 +87,7 @@ export function Login() {
             Sign up
           </Link>
         </p>
-      </form>
+      </form>}
 
       <div className="my-6 flex items-center gap-4 text-xs text-muted">
         <span className="h-px flex-1 bg-hairline" />

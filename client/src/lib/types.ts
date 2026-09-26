@@ -11,6 +11,7 @@ export interface User {
   email: string;
   role: Role;
   createdAt: string;
+  totpEnabled: boolean;
 }
 
 export interface WarehouseRef {

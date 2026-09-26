@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 import { randomInt } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
@@ -8,6 +9,7 @@ import { clearSession, publicUser, requireAuth, setSession } from "../lib/auth";
 import { HttpError, badRequest, unauthorized } from "../lib/http";
 import { sendOtpEmail } from "../lib/mailer";
 import { failureLimiter } from "../lib/rateLimit";
+import { decryptTotpSecret, verifyTotp } from "../lib/totp";
 
 export const authRouter = Router();
 
@@ -79,6 +81,28 @@ authRouter.post("/login", async (req, res) => {
     throw unauthorized("Invalid Login Id or Password");
   }
   loginFailures.reset(key);
+  if (user.totpEnabled && user.totpSecret) {
+    const challenge = jwt.sign({ sub: user.id, purpose: "totp-login" }, env.jwtSecret, { expiresIn: "5m" });
+    res.status(202).json({ requiresTwoFactor: true, challenge });
+    return;
+  }
+  setSession(res, user.id);
+  res.json({ user: publicUser(user) });
+});
+
+authRouter.post("/login/2fa", async (req, res) => {
+  const body = z.object({ challenge: z.string().min(1), code: z.string().regex(/^\d{6}$/, "Enter the 6-digit authenticator code") }).parse(req.body);
+  let payload: jwt.JwtPayload;
+  try {
+    payload = jwt.verify(body.challenge, env.jwtSecret) as jwt.JwtPayload;
+  } catch {
+    throw unauthorized("Your two-step login has expired. Please sign in again.");
+  }
+  if (payload.purpose !== "totp-login" || typeof payload.sub !== "string") throw unauthorized("Your two-step login is invalid. Please sign in again.");
+  const user = await prisma.user.findUnique({ where: { id: payload.sub } });
+  if (!user?.totpEnabled || !user.totpSecret || !verifyTotp(decryptTotpSecret(user.totpSecret), body.code)) {
+    throw unauthorized("Invalid authenticator code");
+  }
   setSession(res, user.id);
   res.json({ user: publicUser(user) });
 });

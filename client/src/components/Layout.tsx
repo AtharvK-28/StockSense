@@ -15,18 +15,32 @@ import {
   Search,
   Tags,
   UserRound,
+  Users,
   Warehouse,
   X,
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { api, qs } from "../lib/api";
-import { useAuth } from "../lib/auth";
+import { useAuth, useIsManager } from "../lib/auth";
 import { DOC_TYPE_LIST, docPath, fmtQty } from "../lib/format";
 import { useLiveUpdates } from "../lib/live";
 import { useDebounced } from "../lib/queries";
 import type { SearchResults } from "../lib/types";
 import { Avatar, StatusBadge } from "./ui";
+
+export function RolePill({ role }: { role: "manager" | "staff" }) {
+  return (
+    <span
+      className={clsx(
+        "mt-0.5 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold",
+        role === "manager" ? "bg-brand-50 text-brand-700" : "bg-info-50 text-info",
+      )}
+    >
+      {role === "manager" ? "Inventory manager" : "Warehouse staff"}
+    </span>
+  );
+}
 
 export function Logo({ className }: { className?: string }) {
   return (
@@ -46,6 +60,7 @@ interface NavItem {
   label: string;
   icon: LucideIcon;
   end?: boolean;
+  managerOnly?: boolean;
 }
 
 const NAV: { heading?: string; items: NavItem[] }[] = [
@@ -69,11 +84,13 @@ const NAV: { heading?: string; items: NavItem[] }[] = [
     items: [
       { to: "/settings/warehouses", label: "Warehouses", icon: Warehouse },
       { to: "/settings/locations", label: "Locations", icon: MapPin },
+      { to: "/settings/team", label: "Team", icon: Users, managerOnly: true },
     ],
   },
 ];
 
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
+  const isManager = useIsManager();
   return (
     <div className="flex h-full flex-col">
       <Link to="/" onClick={onNavigate} className="flex h-20 shrink-0 items-center px-6">
@@ -86,7 +103,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
               <p className="mb-1.5 px-3 text-[11px] font-semibold tracking-wider text-subtle uppercase">{group.heading}</p>
             )}
             <ul className="space-y-0.5">
-              {group.items.map(({ to, label, icon: Icon, end }) => (
+              {group.items.filter((item) => isManager || !item.managerOnly).map(({ to, label, icon: Icon, end }) => (
                 <li key={to}>
                   <NavLink
                     to={to}
@@ -171,7 +188,7 @@ function ProfileMenu({ onNavigate }: { onNavigate?: () => void }) {
         <Avatar name={user.name} size="sm" />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-semibold">{user.name}</span>
-          <span className="block truncate text-xs text-muted">{user.role === "manager" ? "Inventory manager" : "Warehouse staff"}</span>
+          <RolePill role={user.role} />
         </span>
         <ChevronUp className={clsx("size-4 text-muted transition", !open && "rotate-180")} />
       </button>
@@ -344,6 +361,7 @@ function SearchGroup({ title, children }: { title: string; children: ReactNode }
 }
 
 function CreateMenu() {
+  const isManager = useIsManager();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useClickOutside(ref, () => setOpen(false));
@@ -365,10 +383,14 @@ function CreateMenu() {
               <m.icon className="size-4" /> New {m.label.toLowerCase()}
             </Link>
           ))}
-          <div className="my-1 h-px bg-hairline" />
-          <Link to="/products/new" onClick={() => setOpen(false)} className="flex items-center gap-3 px-4 py-2.5 text-[15px] hover:bg-canvas">
-            <Package className="size-4" /> New product
-          </Link>
+          {isManager && (
+            <>
+              <div className="my-1 h-px bg-hairline" />
+              <Link to="/products/new" onClick={() => setOpen(false)} className="flex items-center gap-3 px-4 py-2.5 text-[15px] hover:bg-canvas">
+                <Package className="size-4" /> New product
+              </Link>
+            </>
+          )}
         </div>
       )}
     </div>

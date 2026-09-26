@@ -3,11 +3,13 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { Button, Card, EmptyState, IconButton, Input, PageHeader, Skeleton } from "../../components/ui";
 import { api } from "../../lib/api";
+import { useIsManager } from "../../lib/auth";
 import { useAction, useCategories } from "../../lib/queries";
 import { categoryVisual } from "../../lib/visual";
 
 export function Categories() {
   const categories = useCategories();
+  const isManager = useIsManager();
   const [name, setName] = useState("");
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
 
@@ -21,6 +23,7 @@ export function Categories() {
     <div className="mx-auto max-w-3xl">
       <PageHeader title="Product categories" subtitle="Group products for filtering, reporting and dashboard views." />
 
+      {isManager ? (
       <Card className="mb-6 p-5">
         <form
           className="flex flex-col gap-3 sm:flex-row"
@@ -35,6 +38,9 @@ export function Categories() {
           </Button>
         </form>
       </Card>
+      ) : (
+        <p className="mb-6 rounded-xl bg-canvas px-4 py-3 text-sm text-muted">Only inventory managers can change categories.</p>
+      )}
 
       <Card>
         {!categories.data ? (
@@ -76,6 +82,8 @@ export function Categories() {
                           {c.productCount} product{c.productCount === 1 ? "" : "s"}
                         </Link>
                       </div>
+                      {isManager && (
+                        <>
                       <IconButton icon={Pencil} label={`Rename ${c.name}`} onClick={() => setEditing({ id: c.id, name: c.name })} />
                       <IconButton
                         icon={Trash2}
@@ -85,6 +93,8 @@ export function Categories() {
                           if (confirm(`Delete the “${c.name}” category?`)) remove.mutate(c.id);
                         }}
                       />
+                        </>
+                      )}
                     </>
                   )}
                 </li>

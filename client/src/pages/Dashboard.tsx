@@ -4,10 +4,12 @@ import {
   ArrowDownToLine,
   ArrowLeftRight,
   CircleAlert,
+  ClipboardCheck,
   History,
   Inbox,
   LayoutGrid,
   type LucideIcon,
+  MapPin,
   PackageCheck,
   Tags,
   Truck,
@@ -21,7 +23,7 @@ import { Button, Card, CardHeader, CategoryBar, Chip, EmptyState, SelectPill, Sk
 import { api, qs } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { DOC_TYPE_LIST, docPath, fmtDate, fmtQty } from "../lib/format";
-import { useAction, useCategories, useWarehouses } from "../lib/queries";
+import { useAction, useCategories, useLocations, useWarehouses } from "../lib/queries";
 import type { Dashboard as DashboardData, DocStatus, DocType, DocumentDetail, DocumentRow } from "../lib/types";
 
 type TypeFilter = "all" | DocType;
@@ -85,15 +87,18 @@ function Kpi({
 
 export function Dashboard() {
   const { user } = useAuth();
+  const isManager = user?.role === "manager";
   const navigate = useNavigate();
   const [warehouseId, setWarehouseId] = useState("");
+  const [locationId, setLocationId] = useState("");
+  const locations = useLocations();
   const [categoryId, setCategoryId] = useState("");
   const [type, setType] = useState<TypeFilter>("all");
   const [status, setStatus] = useState<StatusFilter>("open");
   const warehouses = useWarehouses();
   const categories = useCategories();
 
-  const scope = { warehouseId, categoryId };
+  const scope = { warehouseId, locationId, categoryId };
   const dashboard = useQuery({
     queryKey: ["dashboard", scope],
     queryFn: () => api<DashboardData>(`/dashboard${qs(scope)}`),
@@ -129,13 +134,31 @@ export function Dashboard() {
           <p className="mt-1 text-[15px] text-muted">Here's what's happening across your inventory right now.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <SelectPill icon={Warehouse} value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} aria-label="Filter by warehouse">
+          <SelectPill
+            icon={Warehouse}
+            value={warehouseId}
+            onChange={(e) => {
+              setWarehouseId(e.target.value);
+              setLocationId("");
+            }}
+            aria-label="Filter by warehouse"
+          >
             <option value="">All warehouses</option>
             {warehouses.data?.map((w) => (
               <option key={w.id} value={w.id}>
                 {w.name}
               </option>
             ))}
+          </SelectPill>
+          <SelectPill icon={MapPin} value={locationId} onChange={(e) => setLocationId(e.target.value)} aria-label="Filter by location">
+            <option value="">All locations</option>
+            {locations.data
+              ?.filter((l) => !warehouseId || l.warehouseId === warehouseId)
+              .map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.warehouse.code} / {l.name}
+                </option>
+              ))}
           </SelectPill>
           <SelectPill icon={Tags} value={categoryId} onChange={(e) => setCategoryId(e.target.value)} aria-label="Filter by category">
             <option value="">All categories</option>
@@ -244,6 +267,33 @@ export function Dashboard() {
         </section>
 
         <aside className="min-w-0 space-y-8">
+          {dashboard.data && dashboard.data.awaitingApproval.length > 0 && (
+            <Card className={isManager ? "border-brand/30" : undefined}>
+              <CardHeader
+                title={isManager ? "Awaiting your approval" : "Waiting for a manager"}
+                subtitle={isManager ? "Stock counts submitted by warehouse staff" : "Counts submitted for approval"}
+              />
+              <ul className="divide-y divide-hairline border-t border-hairline">
+                {dashboard.data.awaitingApproval.map((d) => (
+                  <li key={d.id}>
+                    <Link to={docPath(d)} className="flex items-center gap-3 px-6 py-3.5 transition hover:bg-canvas/70">
+                      <span className="grid size-9 shrink-0 place-items-center rounded-full bg-brand-50 text-brand">
+                        <ClipboardCheck className="size-4" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold">{d.reference} · {d.submittedBy}</span>
+                        <span className="block truncate text-xs text-muted">
+                          {d.summary}
+                          {d.location && ` · ${d.location}`}
+                        </span>
+                      </span>
+                      <span className="text-sm font-semibold whitespace-nowrap underline underline-offset-2">{isManager ? "Review" : "View"}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
           <Card>
             <CardHeader
               title="Low stock alerts"
@@ -281,6 +331,7 @@ export function Dashboard() {
                       </Link>
                       <div className="flex flex-col items-end gap-2">
                         <StockBadge status={a.status} />
+                        {isManager && (
                         <Button
                           size="sm"
                           variant="subtle"
@@ -289,6 +340,7 @@ export function Dashboard() {
                         >
                           Reorder{a.suggestedQty ? ` ${fmtQty(a.suggestedQty)}` : ""}
                         </Button>
+                        )}
                       </div>
                     </li>
                   );

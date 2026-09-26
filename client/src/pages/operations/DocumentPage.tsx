@@ -110,7 +110,7 @@ const STATUS_FLOW: Record<DocType, DocStatus[]> = {
   receipt: ["draft", "ready", "done"],
   delivery: ["draft", "waiting", "ready", "done"],
   transfer: ["draft", "waiting", "ready", "done"],
-  adjustment: ["draft", "done"],
+  adjustment: ["draft", "ready", "done"],
 };
 
 function StatusBar({ type, status }: { type: DocType; status: DocStatus }) {
@@ -135,7 +135,7 @@ function StatusBar({ type, status }: { type: DocType; status: DocStatus }) {
               )}
             >
               {past && <Check className="size-3.5" strokeWidth={3} />}
-              {STATUS_LABEL[step]}
+              {type === "adjustment" && step === "ready" ? "Awaiting approval" : STATUS_LABEL[step]}
             </span>
           </li>
         );
@@ -144,7 +144,11 @@ function StatusBar({ type, status }: { type: DocType; status: DocStatus }) {
   );
 }
 
-function primaryFor(type: DocType, doc: DocumentDetail | undefined): { action: Action; label: string } | null {
+function primaryFor(type: DocType, doc: DocumentDetail | undefined, isManager: boolean): { action: Action; label: string } | null {
+  if (type === "adjustment" && !isManager) {
+    // Staff count; a manager approves.
+    return !doc || doc.status === "draft" ? { action: "confirm", label: "Submit for approval" } : null;
+  }
   if (!doc || doc.status === "draft") {
     if (type === "adjustment") return { action: "validate", label: "Apply adjustment" };
     return { action: "confirm", label: doc ? "Mark as To Do" : "Save & mark as To Do" };
@@ -156,7 +160,7 @@ function primaryFor(type: DocType, doc: DocumentDetail | undefined): { action: A
     case "transfer":
       return { action: "validate", label: "Validate" };
     case "adjustment":
-      return { action: "validate", label: "Apply adjustment" };
+      return { action: "validate", label: "Approve & apply" };
     case "delivery":
       if (!doc.pickedAt) return { action: "pick", label: "Mark as picked" };
       if (!doc.packedAt) return { action: "pack", label: "Mark as packed" };
@@ -164,11 +168,20 @@ function primaryFor(type: DocType, doc: DocumentDetail | undefined): { action: A
   }
 }
 
-function hintFor(type: DocType, doc: DocumentDetail | undefined, sourceName: string) {
-  if (!doc) return type === "adjustment" ? "Applying sets stock to the counted quantities and logs each difference in the ledger." : "Save a draft to finish later, or mark it as To Do to schedule it.";
+function hintFor(type: DocType, doc: DocumentDetail | undefined, sourceName: string, isManager: boolean) {
+  if (type === "adjustment" && doc?.status === "ready") {
+    return isManager
+      ? `${doc.createdBy.name} submitted this count. Approving sets stock to the counted quantities and logs each difference in the ledger.`
+      : "Submitted — an inventory manager needs to approve this count before stock changes.";
+  }
+  if (type === "adjustment" && (!doc || doc.status === "draft")) {
+    return isManager
+      ? "Applying sets stock to the counted quantities and logs each difference in the ledger."
+      : "Enter what you physically counted, then submit it. An inventory manager approves it before stock changes.";
+  }
+  if (!doc) return "Save a draft to finish later, or mark it as To Do to schedule it.";
   switch (doc.status) {
     case "draft":
-      if (type === "adjustment") return "Applying sets stock to the counted quantities and logs each difference in the ledger.";
       if (type === "receipt") return "Mark as To Do once the order is placed — it moves to Ready. Validate when the goods arrive.";
       return `Mark as To Do to schedule it. StockSense checks that ${sourceName} has enough stock: Ready if it does, Waiting if not.`;
     case "waiting":
@@ -303,7 +316,8 @@ export function DocumentPage() {
     const l = locs.find((x) => x.id === lid);
     return l ? `${l.warehouse.code} / ${l.name}` : "the source location";
   };
-  const primary = primaryFor(type, doc);
+  const isManager = user?.role === "manager";
+  const primary = primaryFor(type, doc, isManager);
   const open = !doc || isOpen(doc.status);
   const lineCount = editable ? draft!.lines.filter((l) => l.productId).length : doc!.lines.length;
 
@@ -370,7 +384,7 @@ export function DocumentPage() {
                 Print
               </Button>
             )}
-            {doc && open && (
+            {doc && open && isManager && (
               <Button
                 variant="danger"
                 disabled={busy}
@@ -501,7 +515,7 @@ export function DocumentPage() {
               </div>
 
               <p className="mt-4 rounded-xl bg-canvas p-4 text-sm leading-relaxed text-muted">
-                {hintFor(type, doc, locName(doc?.sourceLocationId ?? draft?.sourceLocationId))}
+                {hintFor(type, doc, locName(doc?.sourceLocationId ?? draft?.sourceLocationId), isManager)}
               </p>
 
               {type === "delivery" && doc && doc.status !== "canceled" && (
@@ -621,6 +635,7 @@ function toastFor(doc: DocumentDetail, action?: Action) {
         description: summary,
       };
     case "confirm":
+      if (doc.type === "adjustment") return { title: `${doc.reference} sent for approval`, description: "A manager will review your count." };
       return doc.status === "waiting"
         ? { title: `${doc.reference} is waiting for stock`, tone: "info" as const }
         : { title: `${doc.reference} is ready` };

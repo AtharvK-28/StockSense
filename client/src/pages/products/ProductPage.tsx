@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowDownToLine, ArrowLeftRight, History, MapPin, SlidersHorizontal, Truck } from "lucide-react";
+import { ArrowDownToLine, ArrowLeftRight, History, MapPin, SlidersHorizontal, Truck, Lock } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { ActivityFeed } from "../../components/ActivityFeed";
 import { Button, Card, CardHeader, EmptyState, ErrorNote, Field, Input, PageHeader, Select, Skeleton, StockBadge } from "../../components/ui";
 import { api, errorMessage } from "../../lib/api";
 import { docPath, fmtMoney, fmtQty, fmtRelative } from "../../lib/format";
+import { useIsManager } from "../../lib/auth";
 import { useAction, useCategories, useLocations } from "../../lib/queries";
 import type { DocumentDetail, LedgerEntry, ProductDetail } from "../../lib/types";
 import { UOM_OPTIONS, categoryVisual } from "../../lib/visual";
@@ -86,6 +87,7 @@ export function ProductPage() {
   );
 
   const replenish = useAction(() => api<{ document: DocumentDetail }>(`/products/${id}/replenish`, { method: "POST", body: {} }));
+  const isManager = useIsManager();
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -97,6 +99,13 @@ export function ProductPage() {
     });
   };
 
+  if (isNew && !isManager) {
+    return (
+      <EmptyState icon={Lock} title="Only inventory managers can add products" action={<Link to="/products"><Button>Back to products</Button></Link>}>
+        Ask a manager to add it to the catalog. You can still receive, move and count existing products.
+      </EmptyState>
+    );
+  }
   if (!isNew && detail.isError) {
     return <EmptyState icon={MapPin} title="Product not found" action={<Link to="/products"><Button>Back to products</Button></Link>} />;
   }
@@ -113,7 +122,8 @@ export function ProductPage() {
   const initialInvalid = !!form.initialQty && !form.initialLocationId;
 
   const detailsForm = (
-    <form id="product-form" onSubmit={submit} className="grid gap-5 sm:grid-cols-2">
+    <form id="product-form" onSubmit={submit}>
+      <fieldset disabled={!isManager} className="grid gap-5 sm:grid-cols-2">
       <Field label="Product name" className="sm:col-span-2">
         <Input value={form.name} onChange={set("name")} required placeholder="e.g. Steel Rods" />
       </Field>
@@ -170,6 +180,7 @@ export function ProductPage() {
         </div>
       )}
       {save.isError && <div className="sm:col-span-2"><ErrorNote>{errorMessage(save.error)}</ErrorNote></div>}
+      </fieldset>
     </form>
   );
 
@@ -262,6 +273,7 @@ export function ProductPage() {
           <Card className="p-6">
             <h2 className="mb-5 text-lg font-semibold tracking-tight">Details</h2>
             {detailsForm}
+            {isManager ? (
             <div className="mt-6 flex justify-end gap-3 border-t border-hairline pt-5">
               {dirty && (
                 <Button variant="ghost" onClick={() => setDirty(false)}>
@@ -272,6 +284,11 @@ export function ProductPage() {
                 Save changes
               </Button>
             </div>
+            ) : (
+              <p className="mt-6 flex items-center gap-2 border-t border-hairline pt-5 text-sm text-muted">
+                <Lock className="size-4" /> Product details, costs and reordering rules are managed by inventory managers.
+              </p>
+            )}
           </Card>
 
           <Card>
@@ -328,7 +345,7 @@ export function ProductPage() {
                 {p.minQty != null ? `Reorder at ${fmtQty(p.minQty)}${p.maxQty != null ? `, up to ${fmtQty(p.maxQty)}` : ""} ${p.uom}` : "No rule set — add a min quantity to get alerts."}
               </p>
             </div>
-            {p.suggestedQty != null && p.status !== "in" && (
+            {isManager && p.suggestedQty != null && p.status !== "in" && (
               <Button
                 variant="primary"
                 size="lg"

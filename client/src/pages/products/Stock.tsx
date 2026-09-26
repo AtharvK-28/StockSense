@@ -5,7 +5,9 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { LocationSelect } from "../../components/pickers";
 import { Button, Card, EmptyState, ErrorNote, Field, Input, Modal, PageHeader, SelectPill, Skeleton, StockBadge } from "../../components/ui";
+import { useToast } from "../../components/toast";
 import { api, errorMessage } from "../../lib/api";
+import { useIsManager } from "../../lib/auth";
 import { fmtMoney, fmtQty } from "../../lib/format";
 import { useAction, useCategories, useDebounced, useLocations, useProducts, useWarehouses } from "../../lib/queries";
 import type { ProductDetail, ProductRow } from "../../lib/types";
@@ -15,6 +17,7 @@ export function Stock() {
   const [warehouseId, setWarehouseId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [editing, setEditing] = useState<ProductRow | null>(null);
+  const isManager = useIsManager();
   const search = useDebounced(q.trim());
   const warehouses = useWarehouses();
   const categories = useCategories();
@@ -117,7 +120,7 @@ export function Stock() {
                     </td>
                     <td className="py-3.5 pr-6 pl-4 text-right">
                       <Button size="sm" variant="subtle" icon={PencilLine} onClick={() => setEditing(p)}>
-                        Update
+                        {isManager ? "Update" : "Count"}
                       </Button>
                     </td>
                   </tr>
@@ -134,6 +137,8 @@ export function Stock() {
 
 function UpdateStockModal({ product, onClose }: { product: ProductRow; onClose: () => void }) {
   const locations = useLocations();
+  const isManager = useIsManager();
+  const toast = useToast();
   const detail = useQuery({
     queryKey: ["product", product.id],
     queryFn: () => api<{ product: ProductDetail }>(`/products/${product.id}`).then((r) => r.product),
@@ -148,7 +153,7 @@ function UpdateStockModal({ product, onClose }: { product: ProductRow; onClose: 
   const current = detail.data?.stock.find((s) => s.locationId === location)?.quantity ?? 0;
   const next = quantity === "" ? null : Number(quantity);
   const delta = next == null ? null : next - current;
-  const costChanged = cost !== (product.unitCost?.toString() ?? "");
+  const costChanged = isManager && cost !== (product.unitCost?.toString() ?? "");
 
   const save = useAction(
     async () => {
@@ -167,24 +172,28 @@ function UpdateStockModal({ product, onClose }: { product: ProductRow; onClose: 
         });
       }
       if (next != null && delta !== 0) {
-        await api("/stock/adjust", { method: "POST", body: { productId: product.id, locationId: location, quantity: next, reason: reason || null } });
+        const res = await api<{ applied: boolean }>("/stock/adjust", {
+          method: "POST",
+          body: { productId: product.id, locationId: location, quantity: next, reason: reason || null },
+        });
+        return res.applied;
       }
+      return true;
     },
-    { success: "Stock updated" },
   );
 
   return (
     <Modal
       open
       onClose={onClose}
-      title="Update stock"
+      title={isManager ? "Update stock" : "Submit a stock count"}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
           <Button type="submit" form="stock-form" loading={save.isPending} disabled={(next == null || delta === 0) && !costChanged}>
-            Save
+            {isManager ? "Save" : "Submit for approval"}
           </Button>
         </>
       }
@@ -197,7 +206,12 @@ function UpdateStockModal({ product, onClose }: { product: ProductRow; onClose: 
         className="grid gap-4 sm:grid-cols-2"
         onSubmit={(e) => {
           e.preventDefault();
-          save.mutate(undefined, { onSuccess: onClose });
+          save.mutate(undefined, {
+            onSuccess: (applied) => {
+              toast(applied ? { title: "Stock updated" } : { title: "Count sent for approval", description: "A manager will review it before stock changes." });
+              onClose();
+            },
+          });
         }}
       >
         <Field label="Location" className="sm:col-span-2" hint={`Currently ${fmtQty(current)} ${product.uom} here`}>
@@ -209,9 +223,13 @@ function UpdateStockModal({ product, onClose }: { product: ProductRow; onClose: 
         >
           <Input type="number" min={0} step="any" autoFocus value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder={String(current)} />
         </Field>
-        <Field label="Per unit cost (₹)">
-          <Input type="number" min={0} step="any" value={cost} onChange={(e) => setCost(e.target.value)} placeholder="Not set" />
-        </Field>
+        {isManager ? (
+          <Field label="Per unit cost (₹)">
+            <Input type="number" min={0} step="any" value={cost} onChange={(e) => setCost(e.target.value)} placeholder="Not set" />
+          </Field>
+        ) : (
+          <p className="self-center text-[13px] text-muted">Your count goes to an inventory manager for approval before stock changes.</p>
+        )}
         <Field label="Reason" className="sm:col-span-2">
           <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Cycle count, damaged items" />
         </Field>

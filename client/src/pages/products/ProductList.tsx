@@ -3,6 +3,7 @@ import { LayoutGrid, List, Package, Plus, Search, Tags, Warehouse } from "lucide
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { Button, Card, Chip, EmptyState, IconButton, PageHeader, SelectPill, Skeleton, StockBadge } from "../../components/ui";
+import { useIsManager } from "../../lib/auth";
 import { fmtQty } from "../../lib/format";
 import { useCategories, useDebounced, useProducts, useWarehouses } from "../../lib/queries";
 import type { ProductRow } from "../../lib/types";
@@ -29,6 +30,7 @@ export function ProductList() {
   const navigate = useNavigate();
   const [q, setQ] = useState(params.get("q") ?? "");
   const [view, setView] = useState(readView);
+  const isManager = useIsManager();
   const search = useDebounced(q.trim());
   const categoryId = params.get("categoryId") ?? "";
   const warehouseId = params.get("warehouseId") ?? "";
@@ -70,11 +72,13 @@ export function ProductList() {
         title="Products"
         subtitle={items ? `${items.length} product${items.length === 1 ? "" : "s"}${search ? ` matching “${search}”` : ""}` : "Loading…"}
         actions={
-          <Link to="/products/new">
-            <Button variant="primary" icon={Plus}>
-              New product
-            </Button>
-          </Link>
+          isManager && (
+            <Link to="/products/new">
+              <Button variant="primary" icon={Plus}>
+                New product
+              </Button>
+            </Link>
+          )
         }
       />
 
@@ -140,11 +144,11 @@ export function ProductList() {
                 <Button variant="outline" onClick={() => setParams({}, { replace: true })}>
                   Clear filters
                 </Button>
-              ) : (
+              ) : isManager ? (
                 <Button variant="primary" icon={Plus} onClick={() => navigate("/products/new")}>
                   Add your first product
                 </Button>
-              )
+              ) : null
             }
           >
             {search || categoryId || stock ? "Try a different search or remove a filter." : "Add products with a SKU, category and unit of measure to start tracking stock."}

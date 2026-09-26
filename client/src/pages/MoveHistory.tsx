@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { clsx } from "clsx";
-import { ArrowDownLeft, ArrowUpRight, ChevronLeft, ChevronRight, Download, History, KanbanSquare, List, Search, Tags, Warehouse, X } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, ChevronLeft, ChevronRight, Download, History, KanbanSquare, List, MapPin, Package, Search, Tags, Warehouse } from "lucide-react";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useToast } from "../components/toast";
@@ -8,8 +8,8 @@ import { ViewToggle } from "../components/DocumentTable";
 import { Button, Card, Chip, EmptyState, IconButton, PageHeader, SelectPill, Skeleton, StatusBadge } from "../components/ui";
 import { api, errorMessage, qs } from "../lib/api";
 import { MOVE_LABEL, docPath, fmtDateTime, fmtQty, fmtSigned, moveRoute } from "../lib/format";
-import { useCategories, useDebounced, useWarehouses } from "../lib/queries";
-import type { LedgerEntry, MoveType, ProductDetail } from "../lib/types";
+import { useCategories, useDebounced, useLocations, useProducts, useWarehouses } from "../lib/queries";
+import type { LedgerEntry, MoveType } from "../lib/types";
 
 const TYPES: { key: "" | MoveType; label: string }[] = [
   { key: "", label: "All moves" },
@@ -33,6 +33,9 @@ export function MoveHistory() {
   const [type, setType] = useState<"" | MoveType>("");
   const [warehouseId, setWarehouseId] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  const [locationId, setLocationId] = useState("");
+  const locations = useLocations();
+  const products = useProducts({});
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [page, setPage] = useState(1);
@@ -43,18 +46,12 @@ export function MoveHistory() {
   const toast = useToast();
   const [exporting, setExporting] = useState(false);
 
-  const filters = { productId, q: search, type, warehouseId, categoryId, from, to };
+  const filters = { productId, q: search, type, warehouseId, locationId, categoryId, from, to };
   const ledger = useQuery({
     queryKey: ["ledger", filters, page],
     queryFn: () => api<LedgerPage>(`/ledger${qs({ ...filters, page, pageSize: PAGE_SIZE })}`),
     placeholderData: (prev) => prev,
   });
-  const product = useQuery({
-    queryKey: ["product", productId],
-    queryFn: () => api<{ product: ProductDetail }>(`/products/${productId}`).then((r) => r.product),
-    enabled: !!productId,
-  });
-
   const reset = <T,>(setter: (v: T) => void) => (v: T) => {
     setter(v);
     setPage(1);
@@ -102,11 +99,45 @@ export function MoveHistory() {
           <Search className="size-4 shrink-0 text-muted" />
           <input value={q} onChange={(e) => reset(setQ)(e.target.value)} placeholder="Reference, contact or product" aria-label="Search moves" className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted" />
         </label>
-        <SelectPill icon={Warehouse} value={warehouseId} onChange={(e) => reset(setWarehouseId)(e.target.value)} aria-label="Warehouse">
+        <SelectPill
+          icon={Warehouse}
+          value={warehouseId}
+          onChange={(e) => {
+            reset(setWarehouseId)(e.target.value);
+            setLocationId("");
+          }}
+          aria-label="Warehouse"
+        >
           <option value="">All warehouses</option>
           {warehouses.data?.map((w) => (
             <option key={w.id} value={w.id}>
               {w.name}
+            </option>
+          ))}
+        </SelectPill>
+        <SelectPill icon={MapPin} value={locationId} onChange={(e) => reset(setLocationId)(e.target.value)} aria-label="Location">
+          <option value="">All locations</option>
+          {locations.data
+            ?.filter((l) => !warehouseId || l.warehouseId === warehouseId)
+            .map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.warehouse.code} / {l.name}
+              </option>
+            ))}
+        </SelectPill>
+        <SelectPill
+          icon={Package}
+          value={productId}
+          onChange={(e) => {
+            setPage(1);
+            setParams(e.target.value ? { productId: e.target.value } : {}, { replace: true });
+          }}
+          aria-label="Product"
+        >
+          <option value="">All products</option>
+          {products.data?.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
             </option>
           ))}
         </SelectPill>
@@ -133,12 +164,6 @@ export function MoveHistory() {
             ]}
           />
         </div>
-        {productId && (
-          <span className="flex h-10 items-center gap-2 rounded-full border border-ink bg-canvas pr-1.5 pl-4 text-sm font-medium ring-1 ring-ink ring-inset">
-            {product.data?.name ?? "Product"}
-            <IconButton icon={X} label="Clear product filter" className="size-7" onClick={() => setParams({}, { replace: true })} />
-          </span>
-        )}
       </div>
       <div className="scrollbar-none -mx-1 mb-6 flex gap-2 overflow-x-auto px-1 py-0.5">
         {TYPES.map((t) => (

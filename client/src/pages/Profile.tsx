@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { LogOut, ShieldCheck } from "lucide-react";
+import { Check, Lock, LogOut, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { Avatar, Button, Card, ErrorNote, Field, Input, PageHeader, Skeleton } from "../components/ui";
@@ -9,6 +9,19 @@ import { fmtDate } from "../lib/format";
 import { useAction } from "../lib/queries";
 import type { User } from "../lib/types";
 import { PasswordRules, passwordOk } from "./auth/AuthShell";
+
+const PERMISSIONS: { label: string; staff: boolean; note?: string }[] = [
+  { label: "View dashboard, stock and move history", staff: true },
+  { label: "Create receipts, deliveries and transfers", staff: true },
+  { label: "Pick, pack and validate operations", staff: true },
+  { label: "Count stock and submit adjustments", staff: true },
+  { label: "Approve stock adjustments", staff: false, note: "Your counts go to a manager" },
+  { label: "Cancel operations", staff: false },
+  { label: "Manage products, categories and costs", staff: false },
+  { label: "Set reordering rules and reorder", staff: false },
+  { label: "Configure warehouses and locations", staff: false },
+  { label: "Manage the team and roles", staff: false },
+];
 
 export function Profile() {
   const { user, setUser, logout } = useAuth();
@@ -69,6 +82,29 @@ export function Profile() {
         </aside>
 
         <div className="space-y-8">
+          <Card className="p-6">
+            <h2 className="text-lg font-semibold tracking-tight">What you can do</h2>
+            <p className="mt-1 text-sm text-muted">
+              {user.role === "manager"
+                ? "As an inventory manager you control the catalog, approve stock corrections and run settings."
+                : "As warehouse staff you run the day-to-day operations. Managers own the catalog and approve stock corrections."}
+            </p>
+            <ul className="mt-5 grid gap-x-6 gap-y-2.5 text-[15px] sm:grid-cols-2">
+              {PERMISSIONS.map((perm) => {
+                const allowed = user.role === "manager" || perm.staff;
+                return (
+                  <li key={perm.label} className={allowed ? "flex items-start gap-2.5" : "flex items-start gap-2.5 text-muted"}>
+                    {allowed ? <Check className="mt-0.5 size-4 shrink-0 text-ok" strokeWidth={3} /> : <Lock className="mt-0.5 size-4 shrink-0" />}
+                    <span>
+                      {perm.label}
+                      {!allowed && perm.note && <span className="block text-xs">{perm.note}</span>}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
+
           <Card className="p-6">
             <h2 className="text-lg font-semibold tracking-tight">Personal details</h2>
             <form

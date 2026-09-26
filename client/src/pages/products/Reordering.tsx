@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Button, Card, Chip, EmptyState, ErrorNote, Field, IconButton, Input, Modal, PageHeader, Skeleton, StockBadge } from "../../components/ui";
 import { api, errorMessage } from "../../lib/api";
+import { useIsManager } from "../../lib/auth";
 import { docPath, fmtQty } from "../../lib/format";
 import { useAction, useProducts } from "../../lib/queries";
 import type { DocumentDetail, ProductRow } from "../../lib/types";
@@ -13,6 +14,7 @@ export function Reordering() {
   const [view, setView] = useState<View>("rules");
   const [editing, setEditing] = useState<ProductRow | null>(null);
   const navigate = useNavigate();
+  const isManager = useIsManager();
   const products = useProducts(view === "rules" ? { withRules: "true" } : view === "attention" ? { stock: "alert" } : {});
   const replenish = useAction((id: string) => api<{ document: DocumentDetail }>(`/products/${id}/replenish`, { method: "POST", body: {} }), {
     success: "Draft receipt created",
@@ -79,8 +81,8 @@ export function Reordering() {
                     </td>
                     <td className="py-3.5 pr-6 pl-4">
                       <div className="flex items-center justify-end gap-1">
-                        <IconButton icon={Pencil} label={`Edit rule for ${p.name}`} onClick={() => setEditing(p)} />
-                        {p.suggestedQty != null && p.status !== "in" && (
+                        {isManager && <IconButton icon={Pencil} label={`Edit rule for ${p.name}`} onClick={() => setEditing(p)} />}
+                        {isManager && p.suggestedQty != null && p.status !== "in" && (
                           <Button
                             size="sm"
                             variant="subtle"
@@ -90,6 +92,7 @@ export function Reordering() {
                             Reorder {fmtQty(p.suggestedQty)}
                           </Button>
                         )}
+                        {!isManager && p.status !== "in" && <span className="text-xs text-muted">Manager reorders</span>}
                       </div>
                     </td>
                   </tr>

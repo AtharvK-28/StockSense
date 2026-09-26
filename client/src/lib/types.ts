@@ -140,6 +140,7 @@ export interface DocumentDetail extends DocumentBase {
 }
 
 export interface Dashboard {
+  awaitingApproval: { id: string; type: DocType; reference: string; createdAt: string; submittedBy: string; location: string | null; summary: string }[];
   kpis: {
     totalProducts: number;
     inStock: number;

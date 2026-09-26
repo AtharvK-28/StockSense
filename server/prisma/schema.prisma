@@ -1,0 +1,231 @@
+// StockSense data model.
+// Rule of the system: nothing changes stock except a validated document, and every
+// validation writes append-only rows to stock_ledger_entries. stock_levels is a cache of
+// the ledger, updated in the same transaction.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  manager
+  staff
+}
+
+enum DocType {
+  receipt
+  delivery
+  transfer
+  adjustment
+}
+
+enum DocStatus {
+  draft
+  waiting
+  ready
+  done
+  canceled
+}
+
+enum MoveType {
+  receipt
+  delivery
+  transfer_in
+  transfer_out
+  adjustment
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         Role     @default(staff)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  otpCodes      OtpCode[]
+  createdDocs   Document[]  @relation("DocCreatedBy")
+  validatedDocs Document[]  @relation("DocValidatedBy")
+  moves         StockMove[]
+
+  @@map("users")
+}
+
+model OtpCode {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  codeHash  String   @map("code_hash")
+  expiresAt DateTime @map("expires_at")
+  used      Boolean  @default(false)
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("otp_codes")
+}
+
+model Warehouse {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  /// Short code used as the prefix of document references, e.g. "WH" -> WH/IN/0001.
+  code      String   @unique
+  address   String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  locations Location[]
+
+  @@map("warehouses")
+}
+
+model Location {
+  id          String   @id @default(uuid()) @db.Uuid
+  warehouseId String   @map("warehouse_id") @db.Uuid
+  name        String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  warehouse   Warehouse    @relation(fields: [warehouseId], references: [id])
+  stockLevels StockLevel[]
+  moves       StockMove[]
+  sourceDocs  Document[]   @relation("DocSource")
+  destDocs    Document[]   @relation("DocDestination")
+
+  @@unique([warehouseId, name])
+  @@map("locations")
+}
+
+model Category {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  products Product[]
+
+  @@map("product_categories")
+}
+
+model Product {
+  id         String   @id @default(uuid()) @db.Uuid
+  name       String
+  sku        String   @unique
+  categoryId String?  @map("category_id") @db.Uuid
+  uom        String   @map("unit_of_measure")
+  /// Reordering rule: alert when total on-hand falls to or below this.
+  minQty     Decimal? @map("min_qty") @db.Decimal(14, 3)
+  /// Reordering rule: replenish up to this quantity.
+  maxQty     Decimal? @map("max_qty") @db.Decimal(14, 3)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  category    Category?      @relation(fields: [categoryId], references: [id])
+  stockLevels StockLevel[]
+  lines       DocumentLine[]
+  moves       StockMove[]
+
+  @@index([categoryId])
+  @@map("products")
+}
+
+model StockLevel {
+  id         String   @id @default(uuid()) @db.Uuid
+  productId  String   @map("product_id") @db.Uuid
+  locationId String   @map("location_id") @db.Uuid
+  quantity   Decimal  @default(0) @db.Decimal(14, 3)
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  product  Product  @relation(fields: [productId], references: [id])
+  location Location @relation(fields: [locationId], references: [id])
+
+  @@unique([productId, locationId])
+  @@index([locationId])
+  @@map("stock_levels")
+}
+
+model Document {
+  id                    String    @id @default(uuid()) @db.Uuid
+  type                  DocType
+  status                DocStatus @default(draft)
+  reference             String    @unique
+  /// Supplier (receipts) or customer (deliveries).
+  partnerName           String?   @map("partner_name")
+  /// Free-form source reference, e.g. a sales or purchase order number.
+  origin                String?
+  sourceLocationId      String?   @map("source_location_id") @db.Uuid
+  destinationLocationId String?   @map("destination_location_id") @db.Uuid
+  scheduledDate         DateTime  @default(now()) @map("scheduled_date")
+  notes                 String?
+  pickedAt              DateTime? @map("picked_at")
+  packedAt              DateTime? @map("packed_at")
+  createdById           String    @map("created_by") @db.Uuid
+  validatedById         String?   @map("validated_by") @db.Uuid
+  validatedAt           DateTime? @map("validated_at")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  sourceLocation      Location?      @relation("DocSource", fields: [sourceLocationId], references: [id])
+  destinationLocation Location?      @relation("DocDestination", fields: [destinationLocationId], references: [id])
+  createdBy           User           @relation("DocCreatedBy", fields: [createdById], references: [id])
+  validatedBy         User?          @relation("DocValidatedBy", fields: [validatedById], references: [id])
+  lines               DocumentLine[]
+  moves               StockMove[]
+
+  @@index([type, status])
+  @@index([scheduledDate])
+  @@map("documents")
+}
+
+model DocumentLine {
+  id               String   @id @default(uuid()) @db.Uuid
+  documentId       String   @map("document_id") @db.Uuid
+  productId        String   @map("product_id") @db.Uuid
+  /// Quantity moved. For adjustments this holds the applied delta once validated.
+  quantity         Decimal  @default(0) @db.Decimal(14, 3)
+  /// Adjustments only: the physically counted quantity.
+  countedQuantity  Decimal? @map("counted_quantity") @db.Decimal(14, 3)
+  /// Adjustments only: recorded stock at the moment of validation.
+  recordedQuantity Decimal? @map("recorded_quantity") @db.Decimal(14, 3)
+  notes            String?
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id])
+
+  @@index([documentId])
+  @@map("document_lines")
+}
+
+/// The Stock Ledger. Append-only: a database trigger rejects UPDATE and DELETE.
+model StockMove {
+  id            String   @id @default(uuid()) @db.Uuid
+  documentId    String   @map("document_id") @db.Uuid
+  productId     String   @map("product_id") @db.Uuid
+  locationId    String   @map("location_id") @db.Uuid
+  quantityDelta Decimal  @map("quantity_delta") @db.Decimal(14, 3)
+  balanceAfter  Decimal  @map("balance_after") @db.Decimal(14, 3)
+  operationType MoveType @map("operation_type")
+  performedById String   @map("performed_by") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  product     Product  @relation(fields: [productId], references: [id])
+  location    Location @relation(fields: [locationId], references: [id])
+  performedBy User     @relation(fields: [performedById], references: [id])
+
+  @@index([productId, createdAt])
+  @@index([locationId, createdAt])
+  @@index([createdAt])
+  @@map("stock_ledger_entries")
+}
+
+/// Per-prefix counters for human-readable document references.
+model Sequence {
+  prefix String @id
+  value  Int    @default(0)
+
+  @@map("sequences")
+}

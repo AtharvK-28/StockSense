@@ -28,14 +28,14 @@ function barcodeVideo(text: string) {
   return file;
 }
 
-test.describe("camera scanning", () => {
-  test.use({
-    permissions: ["camera"],
-    launchOptions: {
-      args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", `--use-file-for-fake-video-capture=${barcodeVideo("STL-001")}`],
-    },
-  });
+test.use({
+  permissions: ["camera"],
+  launchOptions: {
+    args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", `--use-file-for-fake-video-capture=${barcodeVideo("STL-001")}`],
+  },
+});
 
+test.describe("camera scanning", () => {
   test("reads a label through the camera and opens the product", async ({ page }) => {
     await login(page);
     await page.getByRole("button", { name: "Scan a barcode" }).click();

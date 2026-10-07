@@ -4,7 +4,7 @@ import speakeasy from "speakeasy";
 import { env } from "../env";
 
 const ALGORITHM = "aes-256-gcm";
-const KEY = crypto.createHash("sha256").update(env.jwtSecret).digest();
+const KEY = crypto.createHash("sha256").update(env.totpKey).digest();
 
 export function encryptTotpSecret(secret: string) {
   const iv = crypto.randomBytes(12);

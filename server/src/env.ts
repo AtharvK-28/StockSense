@@ -14,6 +14,8 @@ export const env = {
   port: Number(process.env.PORT ?? 4000),
   databaseUrl: required("DATABASE_URL"),
   jwtSecret: required("JWT_SECRET"),
+  /** Encrypts stored authenticator secrets. Separate from JWT_SECRET so rotating sessions doesn't break 2FA; falls back to it for existing installs. */
+  totpKey: process.env.TOTP_KEY || required("JWT_SECRET"),
   clientOrigin: process.env.CLIENT_ORIGIN ?? "http://localhost:5173",
   isProd: process.env.NODE_ENV === "production",
   /** Secure (HTTPS-only) session cookies. Defaults to on in production; set COOKIE_SECURE=false for plain-HTTP local runs. */

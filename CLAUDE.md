@@ -57,11 +57,14 @@ Key files:
 - Processing: Ready receipts/deliveries/transfers accept a done quantity per line; validating with less than demand asks whether to create a backorder (new doc, status Ready, `backorderOfId`). Validated receipts/deliveries/transfers can be returned (`returnOfId`; only un-returned quantities proposed).
 - Auto-reorder: on a validation that makes total stock cross a product's `minQty`, managers get a notification and (if the setting is on and no receipt for it is open) a draft receipt up to `maxQty` is created, owned by the first manager.
 - Login lockout: 5 failures per Login ID + IP → 15 min (in-memory, single process).
+- Optional 2FA (authenticator app, TOTP via `speakeasy`, `server/src/lib/totp.ts`): Profile → `POST /api/profile/2fa/setup` (QR) → `/2fa/confirm` (code) enables it; `DELETE /api/profile/2fa` needs current password + code. Login with 2FA on returns a 5-min `challenge` JWT instead of a session; `POST /api/auth/login/2fa` exchanges challenge + code. 5 wrong codes per account → 15 min lock (in-memory). Secrets stored AES-256-GCM encrypted in `users.totp_secret`, key from `TOTP_KEY` (falls back to `JWT_SECRET`) — changing that key disables everyone's 2FA.
+- `GET /api/health` (no auth) pings the DB: `200 {ok, database:"connected"}` or `503`.
 - Photos, warehouses map pins and categories are catalog/settings: managers change them, everyone sees them. Any user can export what they can see; team and audit exports are manager-only.
 
 ## Running
 
-- Local PostgreSQL 18 (Windows service) at 127.0.0.1:5432; `pg_hba` trusts 127.0.0.1, user `postgres`, no password. psql: `"/c/Program Files/PostgreSQL/18/bin/psql.exe"`. DBs: `stocksense` (dev), `stocksense_test` (tests).
+- Local PostgreSQL: two Windows services, both `scram-sha-256` (password required, no `trust`). PG 18 on :5432 — password unknown, tests' default `postgres:postgres` is rejected. PG 17 on :5433 — the password the user gave works (ask them; never write it into the repo); it also hosts other projects' DBs (`transitops`, `odoo_cafe`), don't touch those. Run tests there via `TEST_DATABASE_URL=postgresql://postgres:<pw>@127.0.0.1:5433/stocksense_test?schema=public` and `E2E_DATABASE_URL=…:5433/stocksense_e2e…`.
+- e2e on a fresh server: Playwright starts the web server before `globalSetup`, and the web server's readiness URL `/api/health` returns 503 until the DB exists, so the first run times out after 180 s. Create `stocksense_e2e` by hand first (CI already does). psql: `"/c/Program Files/PostgreSQL/18/bin/psql.exe"`. DBs: `stocksense` (dev), `stocksense_test` (tests).
 - `npm run dev` (root) → API :4000 + web :5173 (Vite proxies `/api`). `npm run build && npm start` → single process on :4000.
 - `npm test` (vitest, real Postgres test DB `stocksense_test`), `npm run e2e` (Playwright, production build on :4100 + DB `stocksense_e2e`, reseeded each run; installed Edge locally), `npm run typecheck`.
 - CI: `.github/workflows/ci.yml` (Postgres service, typecheck, vitest, Playwright Chromium). Docker: `docker compose up --build` → :4000 (`COOKIE_SECURE=false` for plain HTTP).
@@ -81,7 +84,11 @@ Key files:
 - Charts: run the dataviz validator before changing chart colours; one axis only.
 - Git: repo is on GitHub (`AtharvK-28/StockSense`); the user commits — don't commit unless asked.
 
-## Status (2026-09-27)
+## Status (2026-10-07)
+
+Since 09-27: authenticator-app 2FA (+ vitest coverage in `server/tests/auth.test.ts`), `/api/health`, tablet header overflow fix, enforced stock reservations, separate `TOTP_KEY`. Typecheck, 40 vitest and 35 Playwright tests all pass (2026-10-07, against PG 17 on :5433). Known 2FA limits: `speakeasy` is unmaintained (`otplib` is the swap), a code can be replayed within its ~90 s window, no recovery codes.
+
+### Earlier status (2026-09-27)
 
 Done: everything in the brief, all mockup pages, PRD FR-1…FR-37 (FR-24 decided as hard block), TRD with documented deviations, roles & approvals, location filters, print sheets, list/kanban views, CSV exports. Phase 2: backorders/partial processing, returns, barcode labels + scanning, analytics + valuation report, auto-reorder, notifications, audit log, phone floor mode, PWA, dark mode, login lockout, empty-start seed, e2e suite, CI workflow, Docker, enforced stock reservations. Phase 3: camera scanning on any device (ZXing fallback), product photos, category drill-down, warehouse maps + directions, CSV/JSON export on every list + full ZIP export, header theme toggle, hidden sidebar scrollbar. 40 vitest + 35 Playwright tests passing. `e2e/requirements.spec.ts` maps every section of the brief and the mockups to a UI test (incl. the brief's receive 100 → move → deliver 20 → adjust −3 flow) — extend it when requirements change.
 
